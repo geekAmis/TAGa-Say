@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TAGa-Say</string>
+    <string name="server_owner_url">https://vk.ru/rf_dron</string>
+    <string name="server_offline_title">Сервер недоступен</string>
+    <string name="server_offline_message">Не удаётся связаться с сервером TAGa-Say. Сообщения сохраняются на устройстве и будут отправлены позже. Если проблема не исчезнет, обратитесь к владельцу проекта.</string>
+    <string name="server_offline_action">Написать владельцу</string>
+</resources>

@@ -1,0 +1,324 @@
+package com.tagasay.app.data
+
+import com.tagasay.app.data.local.SampleData
+import com.tagasay.app.data.local.VaultStore
+import com.tagasay.app.data.model.AppSettings
+import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.Channel
+import com.tagasay.app.data.model.Chat
+import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.Message
+import com.tagasay.app.data.model.MessageKind
+import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.app.data.model.StickerPack
+import com.tagasay.app.data.model.UserProfile
+import com.tagasay.app.data.model.VaultData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+class AppRepository(private val store: VaultStore) {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val _vault = MutableStateFlow(store.load() ?: SampleData.vault())
+    val vault: StateFlow<VaultData> = _vault.asStateFlow()
+
+    init {
+        if (!store.exists()) persist(_vault.value)
+    }
+
+    // ------------------------------------------------------------- messages
+
+    fun messages(chatId: String): List<Message> = _vault.value.messages[chatId].orEmpty()
+
+    fun chat(chatId: String): Chat? = _vault.value.chats.firstOrNull { it.id == chatId }
+
+    fun chatByUsername(username: String): Chat? =
+        _vault.value.chats.firstOrNull { it.username.equals(username.trimStart('@'), ignoreCase = true) }
+
+    fun contactByUsername(username: String): com.tagasay.app.data.model.Contact? =
+        _vault.value.contacts.firstOrNull {
+            it.username.equals(username.trimStart('@'), ignoreCase = true)
+        }
+
+    fun sendMessage(
+        chatId: String,
+        text: String,
+        kind: MessageKind = MessageKind.TEXT,
+        attachment: Attachment? = null,
+        sticker: String? = null,
+        replyToText: String? = null,
+        forwardedFrom: String? = null,
+        senderName: String = "Вы",
+        isMine: Boolean = true,
+    ): Message {
+        val now = System.currentTimeMillis()
+        val message = Message(
+            id = UUID.randomUUID().toString(),
+            chatId = chatId,
+            senderId = if (isMine) "me" else "system",
+            senderName = senderName,
+            text = text,
+            timestamp = now,
+            isMine = isMine,
+            status = MessageStatus.SENT,
+            kind = kind,
+            attachment = attachment,
+            sticker = sticker,
+            replyToText = replyToText,
+            forwardedFrom = forwardedFrom,
+        )
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty() + message
+            data.copy(
+                messages = data.messages + (chatId to list),
+                chats = data.chats.map { chat ->
+                    if (chat.id == chatId) {
+                        chat.copy(
+                            lastMessage = preview(message),
+                            lastTimestamp = now,
+                            unread = 0,
+                        )
+                    } else {
+                        chat
+                    }
+                },
+            )
+        }
+        return message
+    }
+
+    fun editMessage(chatId: String, messageId: String, newText: String) {
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty().map { message ->
+                if (message.id == messageId && message.isMine) {
+                    message.copy(text = newText, edited = true)
+                } else {
+                    message
+                }
+            }
+            val last = list.lastOrNull()
+            data.copy(
+                messages = data.messages + (chatId to list),
+                chats = data.chats.map { chat ->
+                    if (chat.id == chatId && last?.id == messageId) {
+                        chat.copy(lastMessage = preview(last), lastTimestamp = last.timestamp)
+                    } else {
+                        chat
+                    }
+                },
+            )
+        }
+    }
+
+    fun deleteMessage(chatId: String, messageId: String) {
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty().filterNot { it.id == messageId }
+            val last = list.lastOrNull()
+            data.copy(
+                messages = data.messages + (chatId to list),
+                chats = data.chats.map { chat ->
+                    if (chat.id == chatId && last != null) {
+                        chat.copy(lastMessage = preview(last), lastTimestamp = last.timestamp)
+                    } else {
+                        chat
+                    }
+                },
+            )
+        }
+    }
+
+    fun forwardMessage(sourceChatId: String, messageId: String, targetChatId: String) {
+        val source = messages(sourceChatId).firstOrNull { it.id == messageId } ?: return
+        val sourceTitle = chat(sourceChatId)?.title ?: "чат"
+        sendMessage(
+            chatId = targetChatId,
+            text = source.text,
+            kind = source.kind,
+            attachment = source.attachment,
+            sticker = source.sticker,
+            forwardedFrom = sourceTitle,
+        )
+    }
+
+    fun markRead(chatId: String) {
+        updateVault { data ->
+            data.copy(chats = data.chats.map { if (it.id == chatId) it.copy(unread = 0) else it })
+        }
+        // Outgoing messages become "read" when the peer is simulated as online.
+        updateVault { data ->
+            data.copy(
+                messages = data.messages.mapValues { (id, list) ->
+                    if (id != chatId) {
+                        list
+                    } else {
+                        list.map {
+                            if (it.isMine && it.status != MessageStatus.FAILED) {
+                                it.copy(status = MessageStatus.READ)
+                            } else {
+                                it
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    fun setTyping(chatId: String) = Unit
+
+    // --------------------------------------------------------------- chats
+
+    fun ensureDirectChat(username: String, displayName: String, avatarColor: Long): String {
+        val clean = username.trimStart('@')
+        val existing = _vault.value.chats.firstOrNull {
+            it.type == ChatType.PRIVATE && it.username.equals(clean, ignoreCase = true)
+        }
+        if (existing != null) return existing.id
+
+        val id = "dm_${clean.lowercase()}"
+        val chat = Chat(
+            id = id,
+            title = displayName,
+            username = clean,
+            type = ChatType.PRIVATE,
+            avatarColor = avatarColor,
+            online = true,
+            lastMessage = "Начните защищённую переписку",
+            lastTimestamp = System.currentTimeMillis(),
+        )
+        updateVault { it.copy(chats = listOf(chat) + it.chats) }
+        return id
+    }
+
+    fun createChannel(title: String, username: String, description: String): Channel {
+        val clean = username.trimStart('@').ifBlank { "channel_${System.currentTimeMillis() % 10_000}" }
+        val id = "ch_${clean.lowercase()}"
+        val channel = Channel(
+            id = id,
+            username = clean,
+            title = title,
+            subscribers = 1,
+            avatarColor = 0xFF7B61FF,
+            description = description,
+            ownedByMe = true,
+        )
+        val chat = Chat(
+            id = id,
+            title = title,
+            username = clean,
+            type = ChatType.CHANNEL,
+            avatarColor = channel.avatarColor,
+            verified = false,
+            lastMessage = "Канал создан",
+            lastTimestamp = System.currentTimeMillis(),
+            description = description,
+        )
+        updateVault { data ->
+            data.copy(
+                channels = listOf(channel) + data.channels,
+                chats = listOf(chat) + data.chats,
+                messages = data.messages + (
+                    id to listOf(
+                        Message(
+                            id = UUID.randomUUID().toString(),
+                            chatId = id,
+                            senderId = "system",
+                            senderName = "TAGa-Say",
+                            text = "Канал «$title» создан. Подписчики увидят ваши сообщения, но не смогут писать в него.",
+                            timestamp = System.currentTimeMillis(),
+                            isMine = false,
+                            kind = MessageKind.SYSTEM,
+                        ),
+                    )
+                ),
+            )
+        }
+        return channel
+    }
+
+    fun installStickerPack(packId: String, installed: Boolean) {
+        updateVault { data ->
+            data.copy(
+                stickerPacks = data.stickerPacks.map {
+                    if (it.id == packId) it.copy(installed = installed) else it
+                },
+            )
+        }
+    }
+
+    fun addStickerPack(title: String, stickers: List<String>) {
+        val pack = StickerPack(
+            id = "custom_${System.currentTimeMillis()}",
+            title = title,
+            author = "Вы",
+            stickers = stickers,
+            installed = true,
+        )
+        updateVault { it.copy(stickerPacks = it.stickerPacks + pack) }
+    }
+
+    // ------------------------------------------------------------- profile
+
+    fun updateProfile(displayName: String, username: String, phone: String, bio: String) {
+        updateVault {
+            it.copy(
+                profile = UserProfile(
+                    displayName = displayName,
+                    username = username.trimStart('@'),
+                    phone = phone,
+                    bio = bio,
+                    avatarColor = it.profile.avatarColor,
+                ),
+            )
+        }
+    }
+
+    fun resetToDemo() {
+        val demo = SampleData.vault()
+        _vault.value = demo
+        persist(demo)
+    }
+
+    fun wipeAll() {
+        store.wipe()
+        _vault.value = VaultData()
+        persist(_vault.value)
+    }
+
+    // ------------------------------------------------------------- internals
+
+    private fun updateVault(transform: (VaultData) -> VaultData) {
+        val next = transform(_vault.value)
+        _vault.value = next
+        persist(next)
+    }
+
+    private fun persist(data: VaultData) {
+        scope.launch { runCatching { store.save(data) } }
+    }
+
+    private fun preview(message: Message): String = when (message.kind) {
+        MessageKind.TEXT -> message.text
+        MessageKind.STICKER -> "Стикер ${message.sticker.orEmpty()}"
+        MessageKind.IMAGE -> "📷 Фото"
+        MessageKind.VIDEO -> "🎬 Видео"
+        MessageKind.AUDIO -> "🎤 Голосовое сообщение"
+        MessageKind.FILE -> "📎 ${message.attachment?.name ?: "Файл"}"
+        MessageKind.SYSTEM -> message.text
+        MessageKind.CALL -> "📞 Звонок"
+    }
+
+    fun applySettingsToProfile(settings: AppSettings) {
+        if (settings.displayName.isBlank()) return
+        val current = _vault.value.profile
+        if (current.displayName == settings.displayName && current.username == settings.username) return
+        updateProfile(settings.displayName, settings.username, settings.phone, current.bio)
+    }
+}

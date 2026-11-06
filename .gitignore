@@ -1,0 +1,42 @@
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+build/
+.gradle/
+.cxx/
+captures/
+.externalNativeBuild/
+
+# Local config & secrets
+local.properties
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+.env
+.env.*
+prompt.txt
+*.pem
+*.p12
+service-account*.json
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.fleet/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs / temp
+*.log
+/tmp/
+/tools/
+/sdk/
+*.zip

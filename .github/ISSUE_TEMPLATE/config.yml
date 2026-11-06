@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Безопасность
+    url: https://github.com/geekAmis/TAGa-Say/blob/main/SECURITY.md
+    about: Не создавайте публичные issue об уязвимостях
+  - name: Владелец проекта
+    url: https://vk.ru/rf_dron
+    about: Связь с владельцем TAGa-Say

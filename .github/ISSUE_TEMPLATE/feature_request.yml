@@ -1,0 +1,23 @@
+name: Feature request
+description: Предложить функцию
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: Какую задачу решает функция?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Влияние на приватность и безопасность
+      description: Какие метаданные появятся? Можно ли решить без доверия серверу?
