@@ -49,8 +49,6 @@ import com.tagasay.app.ui.theme.TagaGreen
 @Composable
 fun ContactsScreen(
     contacts: List<Contact>,
-    phoneDiscoverable: Boolean,
-    onTogglePhoneDiscovery: (Boolean) -> Unit,
     onOpenContact: (Contact) -> Unit,
     onAddByUsername: (String) -> Unit,
 ) {
@@ -62,8 +60,7 @@ fun ContactsScreen(
         contacts.filter {
             query.isBlank() ||
                 it.displayName.contains(query, ignoreCase = true) ||
-                it.username.contains(query, ignoreCase = true) ||
-                it.phone.contains(query, ignoreCase = true)
+                it.username.contains(query, ignoreCase = true)
         }
     }
 
@@ -160,47 +157,7 @@ fun ContactsScreen(
         }
 
         item {
-            Surface(
-                color = if (phoneDiscoverable) {
-                    MaterialTheme.colorScheme.surface
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.Phone,
-                        contentDescription = null,
-                        tint = if (phoneDiscoverable) TagaGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (phoneDiscoverable) "Поиск по номеру включён" else "Поиск по номеру выключен",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            if (phoneDiscoverable) {
-                                "Другие могут найти вас по номеру телефона"
-                            } else {
-                                "Вас нельзя найти по номеру. Хеш номера не участвует в поиске"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    androidx.compose.material3.Switch(
-                        checked = phoneDiscoverable,
-                        onCheckedChange = onTogglePhoneDiscovery,
-                    )
-                }
-            }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 "Мои контакты",
                 style = MaterialTheme.typography.titleMedium,
@@ -229,7 +186,7 @@ fun ContactsScreen(
                 Column(Modifier.weight(1f)) {
                     Text(contact.displayName, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "@${contact.username}" + if (phoneDiscoverable) " · ${contact.phone}" else "",
+                        "@${contact.username}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

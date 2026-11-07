@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.tagasay.app.BuildConfig
 import com.tagasay.app.data.model.AppSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -36,7 +37,7 @@ class SettingsStore(private val context: Context) {
             readReceipts = prefs[Keys.readReceipts] ?: true,
             darkTheme = prefs[Keys.darkTheme] ?: true,
             notifications = prefs[Keys.notifications] ?: true,
-            serverUrl = prefs[Keys.serverUrl] ?: "",
+            serverUrl = prefs[Keys.serverUrl] ?: BuildConfig.DEFAULT_SERVER_URL,
             showTyping = prefs[Keys.showTyping] ?: true,
         )
     }
@@ -52,7 +53,7 @@ class SettingsStore(private val context: Context) {
                 readReceipts = prefs[Keys.readReceipts] ?: true,
                 darkTheme = prefs[Keys.darkTheme] ?: true,
                 notifications = prefs[Keys.notifications] ?: true,
-                serverUrl = prefs[Keys.serverUrl] ?: "",
+                serverUrl = prefs[Keys.serverUrl] ?: BuildConfig.DEFAULT_SERVER_URL,
                 showTyping = prefs[Keys.showTyping] ?: true,
             )
             val next = transform(current)
@@ -69,13 +70,14 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun completeOnboarding(displayName: String, username: String, phone: String) {
+    suspend fun completeOnboarding(displayName: String, username: String) {
         update {
             it.copy(
                 onboarded = true,
                 displayName = displayName,
                 username = username.trimStart('@'),
-                phone = phone,
+                phone = "",
+                phoneDiscoverable = false,
             )
         }
     }

@@ -55,7 +55,7 @@ import com.tagasay.app.ui.theme.TagaPurple
 import com.tagasay.app.ui.theme.TagaPurpleDark
 
 @Composable
-fun OnboardingScreen(onComplete: (displayName: String, username: String, phone: String) -> Unit) {
+fun OnboardingScreen(onComplete: (displayName: String, username: String, password: String) -> Unit) {
     var step by remember { mutableIntStateOf(0) }
 
     Box(
@@ -112,18 +112,18 @@ private fun WelcomeStep(onContinue: () -> Unit) {
         )
         Spacer(Modifier.height(18.dp))
         Text(
-            text = "Архитектура рассчитана на оконечное шифрование. " +
-                "В alpha данные уже шифруются на устройстве; E2EE-транспорт — следующий этап.",
+            text = "Переписка защищена оконечным шифрованием X3DH + Double Ratchet " +
+                "с пост-квантовым PQXDH. Сервер видит только шифротекст.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(34.dp))
 
-        Feature(Icons.Filled.Lock, "Шифрование", "Локальные ключи в Keystore; E2EE-транспорт — этап 2")
+        Feature(Icons.Filled.Lock, "Сквозное шифрование", "libsignal: X3DH + Double Ratchet + PQXDH")
         Feature(Icons.Filled.Shield, "Антивирус", "Проверка файлов до отправки и после получения")
         Feature(Icons.Filled.Call, "Звонки", "Аудио и видео с дополнительным E2EE")
-        Feature(Icons.Filled.VerifiedUser, "Контроль приватности", "Поиск по номеру можно отключить")
+        Feature(Icons.Filled.VerifiedUser, "Без телефона", "Только @username, пароль и device hash")
 
         Spacer(Modifier.weight(1f))
 
@@ -228,10 +228,13 @@ private fun ProfileStep(
 ) {
     var displayName by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
 
     val usernameValid = username.matches(Regex("[A-Za-z0-9_]{3,32}"))
-    val canContinue = displayName.isNotBlank() && usernameValid
+    val passwordValid = password.length >= 8
+    val passwordsMatch = password == confirmPassword
+    val canContinue = displayName.isNotBlank() && usernameValid && passwordValid && passwordsMatch
 
     Column(
         modifier = Modifier
@@ -249,8 +252,8 @@ private fun ProfileStep(
         Text("Создайте профиль", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Имя и @username видны другим пользователям. Номер телефона нужен для входа " +
-                "и поиска — его можно скрыть в настройках.",
+            "Имя и @username видны другим пользователям. Пароль защищает аккаунт и " +
+                "не хранится на сервере в открытом виде.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -287,22 +290,44 @@ private fun ProfileStep(
         )
         Spacer(Modifier.height(14.dp))
         OutlinedTextField(
-            value = phone,
-            onValueChange = { phone = it.take(20) },
-            label = { Text("Номер телефона (необязательно)") },
-            placeholder = { Text("+7 900 000-00-00") },
+            value = password,
+            onValueChange = { password = it.take(128) },
+            label = { Text("Пароль") },
+            placeholder = { Text("Минимум 8 символов") },
             singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            isError = password.isNotEmpty() && !passwordValid,
+            supportingText = {
+                if (password.isNotEmpty() && !passwordValid) {
+                    Text("Минимум 8 символов")
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedTextField(
+            value = confirmPassword,
+            onValueChange = { confirmPassword = it.take(128) },
+            label = { Text("Повторите пароль") },
+            singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            isError = confirmPassword.isNotEmpty() && !passwordsMatch,
+            supportingText = {
+                if (confirmPassword.isNotEmpty() && !passwordsMatch) {
+                    Text("Пароли не совпадают")
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(24.dp))
         SurfaceNote(
-            "Номер хранится в виде необратимого хеша. Поиск по номеру можно выключить " +
-                "в любой момент в настройках.",
+            "Телефон не требуется. Для входа используются @username, пароль и " +
+                "уникальный скрытый хэш этого устройства.",
         )
         Spacer(Modifier.height(30.dp))
 
         Button(
-            onClick = { onComplete(displayName.trim(), username, phone.trim()) },
+            onClick = { onComplete(displayName.trim(), username, password) },
             enabled = canContinue,
             modifier = Modifier
                 .fillMaxWidth()
@@ -317,7 +342,7 @@ private fun ProfileStep(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "На этом устройстве будет создан ключ Ed25519. Приватная часть не покинет " +
+            "Пароль преобразуется в Argon2id-verifier. Приватные ключи не покидают " +
                 "Android Keystore.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

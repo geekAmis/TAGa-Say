@@ -37,6 +37,15 @@ class InMemoryStore {
 
     suspend fun register(device: Device, profile: UserProfile, phoneHash: String?): Pair<String, String> =
         mutex.withLock {
+            // Перерегистрация username должна заменять старое устройство, иначе
+            // envelope уйдёт в устаревший mailbox.
+            devices.values
+                .filter { it.username.equals(device.username, ignoreCase = true) }
+                .forEach { old ->
+                    devices.remove(old.deviceId)
+                    tokens.entries.removeIf { it.value == old.deviceId }
+                    deliveryTokens.entries.removeIf { it.value == old.deviceId }
+                }
             val access = randomToken()
             val delivery = randomToken()
             devices[device.deviceId] = device
@@ -57,6 +66,13 @@ class InMemoryStore {
         deliveryTokens.entries.firstOrNull { it.value == deviceId }?.key
 
     fun user(username: String): UserProfile? = users[username.lowercase()]
+
+    fun deviceByUsername(username: String): Device? =
+        devices.values.firstOrNull { it.username.equals(username, ignoreCase = true) }
+
+    fun updateDevice(device: Device) {
+        devices[device.deviceId] = device
+    }
 
     fun usersByPhoneHashes(hashes: List<String>): List<String> =
         hashes.mapNotNull { phoneHashes[it] }

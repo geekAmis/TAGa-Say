@@ -35,4 +35,18 @@ object DeviceCrypto {
 
     fun isValidBase64Key(value: String, expectedBytes: Int): Boolean =
         runCatching { Base64.getDecoder().decode(value).size == expectedBytes }.getOrDefault(false)
+
+    /** libsignal ECPublicKey/IdentityKey: 32 или 33 байта (с type-байтом). */
+    fun constantTimeEquals(a: String, b: String): Boolean {
+        if (a.length != b.length) return false
+        var diff = 0
+        for (i in a.indices) diff = diff or (a[i].code xor b[i].code)
+        return diff == 0
+    }
+
+    fun isValidSignalKey(value: String): Boolean =
+        runCatching {
+            val size = Base64.getDecoder().decode(value).size
+            size == 32 || size == 33
+        }.getOrDefault(false)
 }

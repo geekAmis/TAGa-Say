@@ -46,6 +46,5 @@ desktop.ini
 # Logs / temp
 *.log
 /tmp/
-/tools/
 /sdk/
 *.zip

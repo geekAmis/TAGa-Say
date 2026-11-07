@@ -147,6 +147,61 @@ class AppRepository(private val store: VaultStore) {
         )
     }
 
+    /**
+     * Приём E2EE-сообщения: создаёт личный чат, если его ещё нет, и увеличивает unread.
+     */
+    fun receiveMessage(senderUsername: String, text: String) {
+        val clean = senderUsername.trimStart('@')
+        if (clean.isBlank()) return
+        val now = System.currentTimeMillis()
+        val existing = _vault.value.chats.firstOrNull {
+            it.type == ChatType.PRIVATE && it.username.equals(clean, ignoreCase = true)
+        }
+        val chatId = existing?.id ?: "dm_${clean.lowercase()}"
+        val chat = existing ?: Chat(
+            id = chatId,
+            title = "@$clean",
+            username = clean,
+            type = ChatType.PRIVATE,
+            avatarColor = AVATAR_COLORS.random(),
+            lastMessage = "",
+            lastTimestamp = now,
+        )
+        val senderName = _vault.value.contacts
+            .firstOrNull { it.username.equals(clean, true) }
+            ?.displayName ?: "@$clean"
+        val message = Message(
+            id = UUID.randomUUID().toString(),
+            chatId = chatId,
+            senderId = clean,
+            senderName = senderName,
+            text = text,
+            timestamp = now,
+            isMine = false,
+            status = MessageStatus.DELIVERED,
+        )
+        updateVault { data ->
+            data.copy(
+                chats = if (existing == null) {
+                    listOf(chat.copy(lastMessage = preview(message), lastTimestamp = now, unread = 1)) + data.chats
+                } else {
+                    data.chats.map {
+                        if (it.id == chatId) {
+                            it.copy(
+                                lastMessage = preview(message),
+                                lastTimestamp = now,
+                                unread = it.unread + 1,
+                            )
+                        } else {
+                            it
+                        }
+                    }
+                },
+                messages = data.messages + (chatId to (data.messages[chatId].orEmpty() + message)),
+            )
+        }
+    }
+
     fun markRead(chatId: String) {
         updateVault { data ->
             data.copy(chats = data.chats.map { if (it.id == chatId) it.copy(unread = 0) else it })
@@ -320,5 +375,18 @@ class AppRepository(private val store: VaultStore) {
         val current = _vault.value.profile
         if (current.displayName == settings.displayName && current.username == settings.username) return
         updateProfile(settings.displayName, settings.username, settings.phone, current.bio)
+    }
+
+    private companion object {
+        val AVATAR_COLORS = listOf(
+            0xFF7B61FF,
+            0xFFE06C9F,
+            0xFF4CC38A,
+            0xFFF2A65A,
+            0xFF4C8DFF,
+            0xFF9B8AFB,
+            0xFFE5484D,
+            0xFF2FB6B0,
+        )
     }
 }

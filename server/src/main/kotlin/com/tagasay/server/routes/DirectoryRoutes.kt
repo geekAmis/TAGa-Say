@@ -4,6 +4,7 @@ import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.model.DiscoveryRequest
 import com.tagasay.server.model.DiscoveryResponse
 import com.tagasay.server.model.ErrorResponse
+import com.tagasay.server.model.KeyBundleResponse
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -30,6 +31,29 @@ fun Route.directoryRoutes(store: InMemoryStore) {
             return@post
         }
         call.respond(DiscoveryResponse(store.usersByPhoneHashes(request.hashes)))
+    }
+
+    get("/v1/keys/{username}") {
+        val username = call.parameters["username"].orEmpty().trimStart('@').lowercase()
+        val device = store.deviceByUsername(username)
+        if (device == null) {
+            call.respond(HttpStatusCode.NotFound, ErrorResponse("keys not found", "NOT_FOUND"))
+        } else {
+            call.respond(
+                KeyBundleResponse(
+                    username = device.username,
+                    registrationId = device.registrationId,
+                    deviceId = device.signalDeviceId,
+                    identityKey = device.identityKey,
+                    signedPrekeyId = device.signedPrekeyId,
+                    signedPrekey = device.signedPrekey,
+                    signedPrekeySignature = device.signedPrekeySignature,
+                    kyberPrekeyId = device.kyberPrekeyId,
+                    kyberPrekey = device.kyberPrekey,
+                    kyberPrekeySignature = device.kyberPrekeySignature,
+                ),
+            )
+        }
     }
 
     get("/v1/server/info") {

@@ -66,8 +66,8 @@ Kotlin/Ktor, PostgreSQL, Redis, S3-совместимое хранилище.
 
 | Компонент | Ответственность |
 |---|---|
-| `auth` | регистрация устройства, challenge-response (Ed25519), сессии |
-| `directory` | публичные ключи, prekeys, `@username`, хеши телефонов |
+| `auth` | регистрация без телефона, Argon2id-verifier, device hash, TOTP 2FA |
+| `directory` | публичные ключи, prekeys, `@username` |
 | `mailbox` | приём/выдача зашифрованных конвертов, ACK, TTL |
 | `gateway` | WebSocket-подписка на новые конверты |
 | `media` | приём/выдача шифрованных блобов, квоты |

@@ -165,8 +165,6 @@ private fun MainNavHost(
                 composable("contacts") {
                     ContactsScreen(
                         contacts = state.vault.contacts,
-                        phoneDiscoverable = state.settings.phoneDiscoverable,
-                        onTogglePhoneDiscovery = viewModel::setPhoneDiscoverable,
                         onOpenContact = { contact ->
                             val chatId = viewModel.ensureDirectChat(
                                 contact.username,
@@ -204,10 +202,12 @@ private fun MainNavHost(
                         profile = state.vault.profile,
                         server = state.server,
                         fingerprint = state.fingerprint,
+                        onSetup2fa = viewModel::setup2fa,
+                        onEnable2fa = viewModel::enable2fa,
+                        onTwoFactorStatus = viewModel::twoFactorStatus,
                         onOpenProfile = { navController.navigate("profile/me") },
                         onUpdateProfile = viewModel::updateProfile,
                         onDarkTheme = viewModel::setDarkTheme,
-                        onPhoneDiscoverable = viewModel::setPhoneDiscoverable,
                         onReadReceipts = viewModel::setReadReceipts,
                         onNotifications = viewModel::setNotifications,
                         onShowTyping = viewModel::setShowTyping,
@@ -283,13 +283,13 @@ private fun MainNavHost(
                     ProfileScreen(
                         displayName = displayName,
                         username = if (isSelf) state.settings.username else username,
-                        phone = if (isSelf) state.settings.phone else contact?.phone.orEmpty(),
+                        phone = "",
                         bio = if (isSelf) state.vault.profile.bio else contact?.bio.orEmpty(),
                         avatarColor = color,
                         verified = contact?.verified ?: (chat?.verified ?: false),
                         online = contact?.online ?: (chat?.online ?: false),
                         fingerprint = if (isSelf) state.fingerprint else "",
-                        phoneVisible = isSelf || state.settings.phoneDiscoverable,
+                        phoneVisible = false,
                         isSelf = isSelf,
                         isRegistered = isSelf || contact != null || chat != null,
                         onBack = { navController.popBackStack() },

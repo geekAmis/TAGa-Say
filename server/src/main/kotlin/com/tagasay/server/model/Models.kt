@@ -14,9 +14,19 @@ data class RegisterRequest(
     val username: String,
     val displayName: String,
     val phoneHash: String? = null,
+    val passwordVerifier: String = "",
+    val deviceHash: String = "",
+    val totpCode: String = "",
     val identityKey: String,
+    val signingKey: String = "",
     val signedPrekey: String,
     val signedPrekeySignature: String,
+    val signedPrekeyId: Int = 1,
+    val registrationId: Int = 1,
+    val signalDeviceId: Int = 1,
+    val kyberPrekey: String = "",
+    val kyberPrekeySignature: String = "",
+    val kyberPrekeyId: Int = 1,
     val oneTimePrekeys: List<String> = emptyList(),
     val challenge: String,
     val challengeSignature: String,
@@ -36,10 +46,35 @@ data class Device(
     val deviceId: String,
     val username: String,
     val identityKey: String,
+    val signingKey: String,
+    val passwordVerifier: String = "",
+    val deviceHash: String = "",
+    val totpSecret: String = "",
+    val totpEnabled: Boolean = false,
     val signedPrekey: String,
     val signedPrekeySignature: String,
+    val signedPrekeyId: Int = 1,
+    val registrationId: Int = 1,
+    val signalDeviceId: Int = 1,
+    val kyberPrekey: String = "",
+    val kyberPrekeySignature: String = "",
+    val kyberPrekeyId: Int = 1,
     val oneTimePrekeys: List<String>,
     val createdAt: Long,
+)
+
+@Serializable
+data class KeyBundleResponse(
+    val username: String,
+    val registrationId: Int,
+    val deviceId: Int,
+    val identityKey: String,
+    val signedPrekeyId: Int,
+    val signedPrekey: String,
+    val signedPrekeySignature: String,
+    val kyberPrekeyId: Int = 1,
+    val kyberPrekey: String = "",
+    val kyberPrekeySignature: String = "",
 )
 
 @Serializable
@@ -64,6 +99,7 @@ data class SendEnvelopeRequest(
 @Serializable
 data class Envelope(
     val id: String,
+    val sender: String,
     val ciphertext: String,
     val sizeClass: Int,
     val createdAt: Long,
@@ -82,5 +118,17 @@ data class DiscoveryResponse(val usernames: List<String>)
 
 @Serializable
 data class ErrorResponse(val error: String, val code: String = "ERROR")
+
+@Serializable
+data class TwoFactorSetupResponse(
+    val secret: String,
+    val otpauthUri: String,
+)
+
+@Serializable
+data class TwoFactorCodeRequest(val code: String)
+
+@Serializable
+data class TwoFactorStatusResponse(val enabled: Boolean)
 
 data class AuthedDevice(val device: Device, val accessToken: String)

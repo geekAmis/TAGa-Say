@@ -213,7 +213,7 @@ fun ProfileScreen(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "Локальные данные зашифрованы",
+                            "Сквозное шифрование включено",
                             style = MaterialTheme.typography.bodySmall,
                             color = TagaGreen,
                         )

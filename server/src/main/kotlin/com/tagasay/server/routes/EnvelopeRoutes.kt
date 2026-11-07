@@ -32,7 +32,14 @@ fun Route.envelopeRoutes(store: InMemoryStore) {
             call.respond(HttpStatusCode.PayloadTooLarge, ErrorResponse("envelope too large", "PAYLOAD_TOO_LARGE"))
             return@post
         }
-        if (store.usernameByDeliveryToken(request.recipient) == null) {
+        // MVP: адресация по @username или blinded delivery token. Позже — только token.
+        val recipientToken = if (store.usernameByDeliveryToken(request.recipient) != null) {
+            request.recipient
+        } else {
+            store.deviceByUsername(request.recipient.trimStart('@'))
+                ?.let { store.deliveryTokenFor(it.deviceId) }
+        }
+        if (recipientToken == null) {
             call.respond(HttpStatusCode.NotFound, ErrorResponse("unknown recipient", "NOT_FOUND"))
             return@post
         }
@@ -40,13 +47,14 @@ fun Route.envelopeRoutes(store: InMemoryStore) {
         val now = System.currentTimeMillis()
         val envelope = Envelope(
             id = request.id.ifBlank { UUID.randomUUID().toString() },
+            sender = authed.device.username,
             ciphertext = request.ciphertext,
             sizeClass = request.sizeClass,
             createdAt = now,
             expiresAt = now + request.ttlSeconds.coerceIn(60, 30L * 24 * 60 * 60) * 1000,
             ackToken = request.ackToken,
         )
-        store.putEnvelope(request.recipient, envelope)
+        store.putEnvelope(recipientToken, envelope)
         call.respond(HttpStatusCode.Accepted, mapOf("id" to envelope.id))
     }
 

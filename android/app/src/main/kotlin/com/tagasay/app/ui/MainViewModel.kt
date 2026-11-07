@@ -2,6 +2,7 @@ package com.tagasay.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tagasay.app.TAGaSayApp
@@ -10,16 +11,26 @@ import com.tagasay.app.data.model.Attachment
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.ScanReport
+import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.UiState
+import com.tagasay.app.data.network.ApiException
+import com.tagasay.app.data.network.ChatSync
+import com.tagasay.app.data.network.CryptoMessenger
+import com.tagasay.app.data.network.TagaApi
+import com.tagasay.app.data.network.TwoFactorSetupResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -31,6 +42,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val serverMonitor = container.serverMonitor
 
     private val fingerprint = kotlinx.coroutines.flow.MutableStateFlow("")
+    @Volatile
+    private var chatSync: ChatSync? = null
 
     val uiState: StateFlow<UiState> = combine(
         repository.vault,
@@ -62,14 +75,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .distinctUntilChanged()
                 .collectLatest { url -> serverMonitor.watch(url) }
         }
+        viewModelScope.launch {
+            settingsStore.settings
+                .distinctUntilChangedBy { Triple(it.onboarded, it.serverUrl, it.username) }
+                .collectLatest { settings -> runNetworkSync(settings) }
+        }
+    }
+
+    /**
+     * Регистрирует устройство на relay и держит цикл приёма E2EE-конвертов.
+     * При смене сервера/username корутина отменяется и стартует заново.
+     */
+    private suspend fun runNetworkSync(settings: AppSettings) {
+        chatSync = null
+        if (!settings.onboarded || settings.serverUrl.isBlank() || settings.username.isBlank()) return
+        var backoff = 2L
+        while (viewModelScope.isActive) {
+            try {
+                val session = withContext(Dispatchers.IO) {
+                    container.accountManager.ensureRegistered(
+                        serverUrl = settings.serverUrl,
+                        username = settings.username,
+                        displayName = settings.displayName,
+                    )
+                }
+                Log.i("TAGaSync", "registered as ${session.username} at ${session.serverUrl}")
+                val api = TagaApi(session.serverUrl, session.accessToken)
+                val messenger = CryptoMessenger(container.signalStore, api)
+                val sync = ChatSync(api, messenger, repository)
+                chatSync = sync
+                backoff = 2
+                while (viewModelScope.isActive) {
+                    sync.poll()
+                    delay(3_000)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (exception: Exception) {
+                Log.w("TAGaSync", "sync failed: ${exception.message}", exception)
+                if (exception is ApiException && exception.status == 401) {
+                    container.accountManager.clear()
+                }
+                chatSync = null
+                delay(backoff * 1_000)
+                backoff = (backoff * 2).coerceAtMost(30)
+            }
+        }
     }
 
     // ------------------------------------------------------------ onboarding
 
-    fun completeOnboarding(displayName: String, username: String, phone: String) {
+    fun completeOnboarding(displayName: String, username: String, password: String) {
         viewModelScope.launch {
-            settingsStore.completeOnboarding(displayName, username, phone)
-            repository.updateProfile(displayName, username, phone, repository.vault.value.profile.bio)
+            settingsStore.completeOnboarding(displayName, username)
+            repository.updateProfile(displayName, username, "", repository.vault.value.profile.bio)
+            val settings = settingsStore.settings.first()
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    container.accountManager.ensureRegistered(
+                        serverUrl = settings.serverUrl,
+                        username = username,
+                        displayName = displayName,
+                        password = password,
+                    )
+                }
+            }
         }
     }
 
@@ -85,6 +155,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         if (text.isBlank() && attachment == null && sticker == null) return
         repository.sendMessage(chatId, text, kind, attachment, sticker, replyToText)
+        if (kind == MessageKind.TEXT && text.isNotBlank()) {
+            val chat = repository.chat(chatId)
+            if (chat?.type == ChatType.PRIVATE) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    chatSync?.send(chatId, text)
+                }
+            }
+        }
     }
 
     fun editMessage(chatId: String, messageId: String, text: String) {
@@ -114,6 +192,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun inspectFile(uri: Uri): ScanReport = withContext(Dispatchers.IO) {
         container.fileInspector.inspect(uri)
+    }
+
+    // ------------------------------------------------------------------- 2FA
+
+    suspend fun setup2fa(): TwoFactorSetupResponse? = withContext(Dispatchers.IO) {
+        runCatching {
+            val session = container.accountManager.currentSession()
+                ?: error("no session")
+            TagaApi(session.serverUrl, session.accessToken).setup2fa()
+        }.onFailure { Log.w("TAGa2FA", "setup failed", it) }.getOrNull()
+    }
+
+    suspend fun enable2fa(code: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val session = container.accountManager.currentSession() ?: return@runCatching false
+            TagaApi(session.serverUrl, session.accessToken).enable2fa(code).enabled
+        }.getOrDefault(false)
+    }
+
+    suspend fun twoFactorStatus(): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val session = container.accountManager.currentSession() ?: return@runCatching false
+            TagaApi(session.serverUrl, session.accessToken).twoFactorStatus().enabled
+        }.getOrDefault(false)
     }
 
     // -------------------------------------------------------------- settings

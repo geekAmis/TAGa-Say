@@ -24,15 +24,18 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             isMinifyEnabled = false
+            buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://127.0.0.1:8080\"")
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            buildConfigField("String", "DEFAULT_SERVER_URL", "\"\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -60,7 +63,10 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
+
     implementation(project(":core:crypto"))
+    implementation("org.signal:libsignal-android:0.76.1")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -90,6 +96,7 @@ dependencies {
     implementation(libs.okhttp)
 
     implementation(libs.coil.compose)
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

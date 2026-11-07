@@ -228,7 +228,7 @@ fun ChatScreen(
                             onClick = {
                                 showMenu = false
                                 scope.launch {
-                                    snackbar.showSnackbar("Локальный vault активен · E2EE-транспорт в разработке")
+                                    snackbar.showSnackbar("Double Ratchet активен · PQXDH · ключи на устройстве")
                                 }
                             },
                             leadingIcon = { Icon(Icons.Filled.Security, contentDescription = null) },
@@ -392,7 +392,7 @@ fun ChatScreen(
                             )
                             Spacer(Modifier.width(5.dp))
                             Text(
-                                "Локальное шифрование · E2EE-транспорт в разработке",
+                                "Сквозное шифрование libsignal включено",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -43,9 +44,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,10 +60,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tagasay.app.BuildConfig
+import kotlinx.coroutines.launch
 import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.ServerStatus
 import com.tagasay.app.data.model.UserProfile
+import com.tagasay.app.data.network.TwoFactorSetupResponse
 import com.tagasay.app.ui.components.Avatar
+import com.tagasay.app.ui.components.QrCode
 import com.tagasay.app.ui.components.SectionCard
 import com.tagasay.app.ui.components.SettingRow
 import com.tagasay.app.ui.theme.TagaAmber
@@ -74,10 +80,12 @@ fun SettingsScreen(
     profile: UserProfile,
     server: ServerStatus,
     fingerprint: String,
+    onSetup2fa: suspend () -> TwoFactorSetupResponse?,
+    onEnable2fa: suspend (String) -> Boolean,
+    onTwoFactorStatus: suspend () -> Boolean,
     onOpenProfile: () -> Unit,
     onUpdateProfile: (String, String, String, String) -> Unit,
     onDarkTheme: (Boolean) -> Unit,
-    onPhoneDiscoverable: (Boolean) -> Unit,
     onReadReceipts: (Boolean) -> Unit,
     onNotifications: (Boolean) -> Unit,
     onShowTyping: (Boolean) -> Unit,
@@ -91,6 +99,26 @@ fun SettingsScreen(
     var confirmWipe by remember { mutableStateOf(false) }
     var serverUrl by remember(settings.serverUrl) { mutableStateOf(settings.serverUrl) }
     val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    var twoFaEnabled by remember { mutableStateOf(false) }
+    var twoFaSetup by remember { mutableStateOf<TwoFactorSetupResponse?>(null) }
+    var twoFaCode by remember { mutableStateOf("") }
+    var twoFaError by remember { mutableStateOf("") }
+    var twoFaBusy by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { twoFaEnabled = onTwoFactorStatus() }
+
+    val start2fa: () -> Unit = {
+        if (!twoFaBusy) {
+            twoFaBusy = true
+            twoFaError = ""
+            scope.launch {
+                twoFaSetup = onSetup2fa()
+                if (twoFaSetup == null) twoFaError = "Сервер недоступен"
+                twoFaBusy = false
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -132,7 +160,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        settings.phone.ifBlank { "Телефон не указан" },
+                        "Аккаунт защищён паролем",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -180,7 +208,7 @@ fun SettingsScreen(
             InfoRow(
                 icon = Icons.Filled.Lock,
                 title = "Протокол",
-                value = "План: libsignal · сейчас AES-256-GCM",
+                value = "X3DH + Double Ratchet + PQXDH",
             )
             InfoRow(
                 icon = Icons.Filled.VerifiedUser,
@@ -192,6 +220,31 @@ fun SettingsScreen(
                 title = "Транспорт",
                 value = "TLS 1.3 + certificate pinning",
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { start2fa() }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.VerifiedUser, contentDescription = null, tint = TagaGreen)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Двухфакторная аутентификация", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (twoFaEnabled) "Включена · Google Authenticator" else "Google Authenticator / Aegis",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = start2fa, enabled = !twoFaBusy) {
+                    Text(
+                        if (twoFaBusy) "…" else if (twoFaEnabled) "Вкл." else "Настроить",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(14.dp))
@@ -204,13 +257,6 @@ fun SettingsScreen(
             modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
         )
         SectionCard {
-            SettingRow(
-                title = "Поиск по номеру телефона",
-                subtitle = "Разрешить находить вас по номеру",
-                checked = settings.phoneDiscoverable,
-                onCheckedChange = onPhoneDiscoverable,
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingRow(
                 title = "Отчёты о прочтении",
                 subtitle = "Собеседник видит, что вы прочитали сообщение",
@@ -378,13 +424,66 @@ fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
     }
 
+    twoFaSetup?.let { setup ->
+        AlertDialog(
+            onDismissRequest = { twoFaSetup = null },
+            icon = { Icon(Icons.Filled.VerifiedUser, contentDescription = null, tint = TagaGreen) },
+            title = { Text("Google Authenticator") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    QrCode(setup.otpauthUri, modifier = Modifier.size(220.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Секрет: ${setup.secret}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = twoFaCode,
+                        onValueChange = {
+                            twoFaCode = it.filter(Char::isDigit).take(6)
+                            twoFaError = ""
+                        },
+                        label = { Text("Код из приложения") },
+                        singleLine = true,
+                        isError = twoFaError.isNotBlank(),
+                        supportingText = { if (twoFaError.isNotBlank()) Text(twoFaError) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = twoFaCode.length == 6 && !twoFaBusy,
+                    onClick = {
+                        scope.launch {
+                            twoFaBusy = true
+                            val ok = onEnable2fa(twoFaCode)
+                            twoFaBusy = false
+                            if (ok) {
+                                twoFaEnabled = true
+                                twoFaSetup = null
+                                twoFaCode = ""
+                            } else {
+                                twoFaError = "Неверный код или сервер недоступен"
+                            }
+                        }
+                    },
+                ) { Text("Включить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { twoFaSetup = null }) { Text("Отмена") }
+            },
+        )
+    }
+
     if (editingProfile) {
         EditProfileDialog(
             profile = profile,
-            phone = settings.phone,
             onDismiss = { editingProfile = false },
-            onSave = { name, username, phone, bio ->
-                onUpdateProfile(name, username, phone, bio)
+            onSave = { name, username, bio ->
+                onUpdateProfile(name, username, "", bio)
                 editingProfile = false
             },
         )
@@ -449,13 +548,11 @@ private fun InfoRow(
 @Composable
 private fun EditProfileDialog(
     profile: UserProfile,
-    phone: String,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String) -> Unit,
+    onSave: (String, String, String) -> Unit,
 ) {
     var name by remember { mutableStateOf(profile.displayName) }
     var username by remember { mutableStateOf(profile.username) }
-    var phoneValue by remember { mutableStateOf(phone) }
     var bio by remember { mutableStateOf(profile.bio) }
 
     AlertDialog(
@@ -484,14 +581,6 @@ private fun EditProfileDialog(
                 )
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
-                    value = phoneValue,
-                    onValueChange = { phoneValue = it.take(20) },
-                    label = { Text("Телефон") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
                     value = bio,
                     onValueChange = { bio = it.take(120) },
                     label = { Text("О себе") },
@@ -502,7 +591,7 @@ private fun EditProfileDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name.trim(), username, phoneValue.trim(), bio.trim()) },
+                onClick = { onSave(name.trim(), username, bio.trim()) },
                 enabled = name.isNotBlank() && username.length >= 3,
             ) { Text("Сохранить") }
         },

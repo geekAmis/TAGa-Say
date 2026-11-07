@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tagasay.app.ui.ComplianceGate
 import com.tagasay.app.ui.MainViewModel
 import com.tagasay.app.ui.TAGaSayRoot
 import com.tagasay.app.ui.theme.TAGaSayTheme
@@ -37,12 +38,14 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    TAGaSayRoot(
-                        viewModel = viewModel,
-                        state = state,
-                        deepLink = link,
-                        onDeepLinkConsumed = { deepLink.value = null },
-                    )
+                    ComplianceGate {
+                        TAGaSayRoot(
+                            viewModel = viewModel,
+                            state = state,
+                            deepLink = link,
+                            onDeepLinkConsumed = { deepLink.value = null },
+                        )
+                    }
                 }
             }
         }
