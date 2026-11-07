@@ -130,9 +130,7 @@ fun ServerBanner(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
@@ -150,12 +148,14 @@ fun ServerBanner(
                     )
                     Text(
                         text = if (status.configured) {
-                            "Сообщения сохраняются и отправятся позже"
+                            "Сообщения сохранятся и отправятся позже"
                         } else {
-                            "Сервер ещё не настроен в приложении"
+                            "Укажите адрес сервера в настройках"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 TextButton(
