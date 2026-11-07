@@ -55,7 +55,7 @@ import com.tagasay.app.ui.theme.TagaPurple
 import com.tagasay.app.ui.theme.TagaPurpleDark
 
 @Composable
-fun OnboardingScreen(onComplete: (displayName: String, username: String, password: String) -> Unit) {
+fun OnboardingScreen(onComplete: (displayName: String, username: String, password: String, totpCode: String) -> Unit) {
     var step by remember { mutableIntStateOf(0) }
 
     Box(
@@ -224,12 +224,13 @@ private fun Feature(icon: ImageVector, title: String, subtitle: String) {
 @Composable
 private fun ProfileStep(
     onBack: () -> Unit,
-    onComplete: (String, String, String) -> Unit,
+    onComplete: (String, String, String, String) -> Unit,
 ) {
     var displayName by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var totpCode by remember { mutableStateOf("") }
 
     val usernameValid = username.matches(Regex("[A-Za-z0-9_]{3,32}"))
     val passwordValid = password.length >= 8
@@ -319,6 +320,16 @@ private fun ProfileStep(
             },
             modifier = Modifier.fillMaxWidth(),
         )
+        Spacer(Modifier.height(14.dp))
+        OutlinedTextField(
+            value = totpCode,
+            onValueChange = { totpCode = it.filter(Char::isDigit).take(6) },
+            label = { Text("Код 2FA (если включён)") },
+            placeholder = { Text("000000") },
+            singleLine = true,
+            supportingText = { Text("Для входа на новом устройстве") },
+            modifier = Modifier.fillMaxWidth(),
+        )
         Spacer(Modifier.height(24.dp))
         SurfaceNote(
             "Телефон не требуется. Для входа используются @username, пароль и " +
@@ -327,7 +338,7 @@ private fun ProfileStep(
         Spacer(Modifier.height(30.dp))
 
         Button(
-            onClick = { onComplete(displayName.trim(), username, password) },
+            onClick = { onComplete(displayName.trim(), username, password, totpCode) },
             enabled = canContinue,
             modifier = Modifier
                 .fillMaxWidth()

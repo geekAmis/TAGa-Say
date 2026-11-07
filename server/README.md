@@ -5,7 +5,7 @@
 ## Стек
 
 - Kotlin 2.0 / Ktor 3 / Netty
-- PostgreSQL + Redis (следующий этап; сейчас in-memory store)
+- PostgreSQL + Redis (следующий этап); сейчас in-memory store с JSON-снапшотом (`TAGASAY_DATA`)
 - BouncyCastle для проверки подписей Ed25519
 - Caddy (TLS 1.3, HSTS) в docker-compose
 

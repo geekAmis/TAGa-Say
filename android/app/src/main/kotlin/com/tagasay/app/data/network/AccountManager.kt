@@ -98,6 +98,7 @@ class AccountManager(
         username: String,
         displayName: String,
         password: String = "",
+        totpCode: String = "",
     ): Session {
         val normalizedUrl = serverUrl.trim().trimEnd('/')
         require(normalizedUrl.isNotBlank()) { "Server URL is empty" }
@@ -131,6 +132,7 @@ class AccountManager(
                 phoneHash = null,
                 passwordVerifier = verifier,
                 deviceHash = deviceHash,
+                totpCode = totpCode,
                 identityKey = signalStore.identityPublicBase64(),
                 signingKey = signingKey,
                 signedPrekey = signalStore.signedPreKeyPublicBase64(),

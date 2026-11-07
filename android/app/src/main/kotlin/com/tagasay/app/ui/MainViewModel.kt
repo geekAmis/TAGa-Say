@@ -125,7 +125,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ------------------------------------------------------------ onboarding
 
-    fun completeOnboarding(displayName: String, username: String, password: String) {
+    fun completeOnboarding(
+        displayName: String,
+        username: String,
+        password: String,
+        totpCode: String,
+    ) {
         viewModelScope.launch {
             settingsStore.completeOnboarding(displayName, username)
             repository.updateProfile(displayName, username, "", repository.vault.value.profile.bio)
@@ -137,6 +142,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         username = username,
                         displayName = displayName,
                         password = password,
+                        totpCode = totpCode,
                     )
                 }
             }

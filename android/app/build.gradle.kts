@@ -29,7 +29,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            buildConfigField("String", "DEFAULT_SERVER_URL", "\"\"")
+            buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://83-141-92-137.nip.io\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

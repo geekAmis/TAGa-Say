@@ -10,6 +10,7 @@ TAGa-Say — закрытая система обмена сообщениями
 > Статус: активная разработка (alpha). Уже работает: Compose-UI, зашифрованный локальный
 > vault, сервер-ретранслятор, **E2EE-текст через libsignal (X3DH + Double Ratchet + PQXDH)**,
 > клиентский антивирус, Bot API-дизайн и прототип Enchat Bridge.
+> Сервер развёрнут: `https://83-141-92-137.nip.io` (TLS, systemd, JSON-снапшот).
 > В разработке: вложения по сети, звонки, группы и полноценная платформа ботов.
 > Проект не готов к повседневному использованию.
 
@@ -88,6 +89,7 @@ cd android
 - [Bot API](docs/bots.md)
 - [Enchat Bridge](docs/enchat-bridge.md)
 - [Разбор референсов](docs/reference-notes.md)
+- [Deployment](docs/deployment.md)
 
 ## Лицензия
 

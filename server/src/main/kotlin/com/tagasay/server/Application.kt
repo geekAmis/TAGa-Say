@@ -26,7 +26,9 @@ fun main() {
         .start(wait = true)
 }
 
-fun Application.module(store: InMemoryStore = InMemoryStore()) {
+fun Application.module(
+    store: InMemoryStore = InMemoryStore(System.getenv("TAGASAY_DATA")),
+) {
     install(ContentNegotiation) {
         json(
             Json {
