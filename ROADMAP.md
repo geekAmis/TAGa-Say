@@ -9,7 +9,9 @@
 
 - [x] Создан репозиторий и базовая документация (README, ROADMAP, LICENSE, PRIVACY, SECURITY).
 - [x] Спроектирована архитектура и модель угроз (`docs/`).
-- [ ] CI: сборка Android, линт, unit-тесты, сборка сервера.
+- [x] Первая локальная сборка APK, unit-тесты и instrumented-тесты крипто на устройстве.
+- [ ] CI: сборка Android, линт, unit-тесты, сборка сервера (workflow-файлы готовы, нужен
+      GitHub-токен со scope `workflow`).
 - [ ] Настроены подписанные debug/release сборки, R8, baseline-профили.
 - [ ] Каркас Android-приложения: Compose, тема, навигация, DI.
 - [ ] Каркас сервера: Ktor, PostgreSQL, Redis, миграции, Docker Compose.

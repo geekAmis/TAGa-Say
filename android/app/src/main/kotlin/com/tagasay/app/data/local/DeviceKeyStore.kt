@@ -66,6 +66,18 @@ class DeviceKeyStore(
 
     fun fingerprint(): String = crypto.fingerprint(ensureIdentity().publicKey)
 
+    /**
+     * Уничтожает локальный ключевой материал: device secret, identity key и
+     * аппаратный wrapping-ключ. После этого старый vault не расшифровать.
+     */
+    fun wipe() {
+        prefs.edit().clear().apply()
+        runCatching {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            keyStore.deleteEntry(KEY_ALIAS)
+        }
+    }
+
     private fun createIdentity(): Identity {
         val pair = crypto.generateSigningKeyPair()
         prefs.edit()

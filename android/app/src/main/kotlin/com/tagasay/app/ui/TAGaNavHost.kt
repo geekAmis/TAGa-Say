@@ -1,8 +1,11 @@
 package com.tagasay.app.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.ChatBubble
@@ -62,7 +65,15 @@ fun TAGaSayRoot(
     deepLink: String?,
     onDeepLinkConsumed: () -> Unit,
 ) {
-    if (!state.settings.onboarded) {
+    if (state.loading) {
+        // Не показываем онбординг, пока DataStore не отдал сохранённые настройки.
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = TagaPurple)
+        }
+    } else if (!state.settings.onboarded) {
         OnboardingScreen(onComplete = viewModel::completeOnboarding)
     } else {
         MainNavHost(

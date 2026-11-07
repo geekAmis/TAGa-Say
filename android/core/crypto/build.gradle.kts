@@ -19,6 +19,12 @@ android {
         }
     }
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -31,7 +37,12 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation(libs.lazysodium.android)
+    implementation(libs.lazysodium.android) {
+        // Lazysodium тянет обычный jna.jar без Android-нативов.
+        exclude(group = "net.java.dev.jna", module = "jna")
+    }
+    // JNA AAR содержит libjnidispatch.so для Android.
+    implementation("net.java.dev.jna:jna:5.17.0@aar")
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation("junit:junit:4.13.2")

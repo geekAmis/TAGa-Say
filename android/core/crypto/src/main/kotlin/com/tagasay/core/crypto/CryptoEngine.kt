@@ -20,7 +20,8 @@ import javax.crypto.spec.SecretKeySpec
  */
 class CryptoEngine {
 
-    private val sodium: LazySodiumAndroid = LazySodiumAndroid(SodiumAndroid())
+    // Lazy: JVM unit-тесты HKDF/AES/SHA не должны грузить нативную libsodium.
+    private val sodium: LazySodiumAndroid by lazy { LazySodiumAndroid(SodiumAndroid()) }
     private val random = SecureRandom()
 
     // ---------------------------------------------------------------- random

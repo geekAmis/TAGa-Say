@@ -229,9 +229,6 @@ def list_public_rooms(
 # Invite links (share service; key lives in the URL fragment)
 # --------------------------------------------------------------------------
 
-LINK_SERVER = "https://share.enchat.io"
-
-
 def parse_invite(url: str) -> tuple[str, str] | None:
     try:
         _, fragment = url.split("/join#", 1)
@@ -246,9 +243,10 @@ def resolve_invite(url: str, session: requests.Session | None = None) -> tuple[s
     if not parsed:
         return None
     session_id, key = parsed
+    base = url.split("/join#", 1)[0].rstrip("/")
     transport = session or requests
     try:
-        response = transport.get(f"{LINK_SERVER}/get/{session_id}", timeout=8)
+        response = transport.get(f"{base}/get/{session_id}", timeout=8)
         response.raise_for_status()
         payload = response.json().get("payload")
         if not payload:

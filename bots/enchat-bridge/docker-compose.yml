@@ -1,0 +1,12 @@
+services:
+  enchat-bridge:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # Мост должен ходить только к relay и Bot API. Для Tor раскомментируйте:
+    # network_mode: "service:tor"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp

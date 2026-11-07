@@ -30,28 +30,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsStore = container.settingsStore
     private val serverMonitor = container.serverMonitor
 
-    private val fingerprint: String = runCatching { container.deviceKeyStore.fingerprint() }
-        .getOrDefault("")
+    private val fingerprint = kotlinx.coroutines.flow.MutableStateFlow("")
 
     val uiState: StateFlow<UiState> = combine(
         repository.vault,
         settingsStore.settings,
         serverMonitor.status,
-    ) { vault, settings, server ->
+        fingerprint,
+    ) { vault, settings, server, fp ->
         UiState(
             loading = false,
             settings = settings,
             vault = vault,
             server = server,
-            fingerprint = fingerprint,
+            fingerprint = fp,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = UiState(fingerprint = fingerprint),
+        initialValue = UiState(),
     )
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            fingerprint.value = runCatching { container.deviceKeyStore.fingerprint() }
+                .getOrDefault("")
+        }
         viewModelScope.launch {
             settingsStore.settings
                 .map { it.serverUrl }
@@ -138,6 +142,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun wipeAll() {
         repository.wipeAll()
+        container.deviceKeyStore.wipe()
         viewModelScope.launch {
             settingsStore.update { AppSettings() }
         }
