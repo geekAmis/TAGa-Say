@@ -241,8 +241,8 @@ private fun MainNavHost(
                                 navController.navigate(target)
                             },
                             onCall = { navController.navigate("call/$chatId") },
-                            onSend = { text, kind, attachment, sticker, reply ->
-                                viewModel.sendMessage(chatId, text, kind, attachment, sticker, reply)
+                            onSend = { text, kind, attachment, sticker, reply, replyId ->
+                                viewModel.sendMessage(chatId, text, kind, attachment, sticker, reply, replyId)
                             },
                             onEdit = { messageId, text ->
                                 viewModel.editMessage(chatId, messageId, text)

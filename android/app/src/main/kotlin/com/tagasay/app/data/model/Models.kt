@@ -56,6 +56,7 @@ data class Message(
     val sticker: String? = null,
     val callSeconds: Int? = null,
     val replyToText: String? = null,
+    val replyToId: String? = null,
 )
 
 @Serializable

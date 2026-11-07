@@ -223,8 +223,9 @@ class SignalStore(
         synchronized(lock) { kyberPreKeys.containsKey(kyberPreKeyId) }
 
     override fun markKyberPreKeyUsed(kyberPreKeyId: Int) = synchronized(lock) {
-        kyberPreKeys.remove(kyberPreKeyId)
-        persist()
+        // Alpha: relay advertises один Kyber-prekey и не умеет принимать новый.
+        // Не удаляем приватную часть, иначе второй отправитель не сможет
+        // установить сессию. Ротация появится вместе с пулом prekey на сервере.
     }
 
     // ---------------------------------------------------------- SenderKeyStore

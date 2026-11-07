@@ -162,9 +162,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         attachment: Attachment? = null,
         sticker: String? = null,
         replyToText: String? = null,
+        replyToId: String? = null,
     ) {
         if (text.isBlank() && attachment == null && sticker == null) return
-        val message = repository.sendMessage(chatId, text, kind, attachment, sticker, replyToText)
+        val message = repository.sendMessage(
+            chatId = chatId,
+            text = text,
+            kind = kind,
+            attachment = attachment,
+            sticker = sticker,
+            replyToText = replyToText,
+            replyToId = replyToId,
+        )
         val chat = repository.chat(chatId) ?: return
         if (chat.type != ChatType.PRIVATE) return
         if (kind == MessageKind.SYSTEM || kind == MessageKind.CALL) return
@@ -175,23 +184,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             val result: Result<Unit> = when {
-                kind == MessageKind.TEXT && text.isNotBlank() -> sync.send(chatId, text)
                 attachment != null -> {
                     val source = attachment.localUri?.let(Uri::parse)
                     if (source == null) {
                         Result.failure(IllegalArgumentException("У вложения нет локального файла"))
                     } else {
-                        sync.sendAttachment(chatId, kind, attachment, source, text, replyToText)
-                            .map { cached ->
-                                repository.updateAttachment(
-                                    chatId,
-                                    message.id,
-                                    attachment.copy(localUri = cached.toString()),
-                                )
-                            }
+                        sync.sendAttachment(
+                            chatId = chatId,
+                            messageId = message.id,
+                            kind = kind,
+                            attachment = attachment,
+                            source = source,
+                            caption = text,
+                            replyToId = replyToId,
+                            replyToText = replyToText,
+                        ).map { prepared ->
+                            repository.updateAttachment(
+                                chatId,
+                                message.id,
+                                attachment.copy(
+                                    localUri = prepared.cachedUri.toString(),
+                                    mediaId = prepared.mediaId,
+                                    keyBase64 = prepared.keyBase64,
+                                ),
+                            )
+                        }
                     }
                 }
-                else -> Result.success(Unit)
+                else -> sync.send(
+                    chatId = chatId,
+                    messageId = message.id,
+                    text = text,
+                    kind = kind,
+                    sticker = sticker,
+                    replyToId = replyToId,
+                    replyToText = replyToText,
+                )
             }
             repository.setMessageStatus(
                 chatId,
@@ -226,15 +254,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun editMessage(chatId: String, messageId: String, text: String) {
         if (text.isBlank()) return
         repository.editMessage(chatId, messageId, text)
+        if (repository.chat(chatId)?.type != ChatType.PRIVATE) return
+        viewModelScope.launch(Dispatchers.IO) {
+            chatSync?.edit(chatId, messageId, text)
+                ?.onFailure { Log.w("TAGaSync", "edit failed: ${it.message}", it) }
+        }
     }
 
-    fun deleteMessage(chatId: String, messageId: String) =
+    fun deleteMessage(chatId: String, messageId: String) {
         repository.deleteMessage(chatId, messageId)
+        if (repository.chat(chatId)?.type != ChatType.PRIVATE) return
+        viewModelScope.launch(Dispatchers.IO) {
+            chatSync?.delete(chatId, messageId)
+                ?.onFailure { Log.w("TAGaSync", "delete failed: ${it.message}", it) }
+        }
+    }
 
-    fun forwardMessage(sourceChatId: String, messageId: String, targetChatId: String) =
-        repository.forwardMessage(sourceChatId, messageId, targetChatId)
+    fun forwardMessage(sourceChatId: String, messageId: String, targetChatId: String) {
+        val sourceTitle = repository.chat(sourceChatId)?.title ?: "чат"
+        val forwarded = repository.forwardMessage(sourceChatId, messageId, targetChatId) ?: return
+        if (repository.chat(targetChatId)?.type != ChatType.PRIVATE) return
+        viewModelScope.launch(Dispatchers.IO) {
+            chatSync?.forward(targetChatId, forwarded, sourceTitle)
+                ?.onFailure { Log.w("TAGaSync", "forward failed: ${it.message}", it) }
+        }
+    }
 
-    fun markRead(chatId: String) = repository.markRead(chatId)
+    fun markRead(chatId: String) {
+        repository.markRead(chatId)
+        if (repository.chat(chatId)?.type != ChatType.PRIVATE) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val receiptsEnabled = runCatching { settingsStore.settings.first().readReceipts }
+                .getOrDefault(true)
+            if (!receiptsEnabled) return@launch
+            chatSync?.sendReadReceipt(chatId)
+                ?.onFailure { Log.w("TAGaSync", "read receipt failed: ${it.message}", it) }
+        }
+    }
 
     fun ensureDirectChat(username: String, displayName: String, avatarColor: Long): String =
         repository.ensureDirectChat(username, displayName, avatarColor)

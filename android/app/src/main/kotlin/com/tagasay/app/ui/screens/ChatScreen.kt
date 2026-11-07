@@ -132,7 +132,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onOpenProfile: () -> Unit,
     onCall: () -> Unit,
-    onSend: (String, MessageKind, Attachment?, String?, String?) -> Unit,
+    onSend: (String, MessageKind, Attachment?, String?, String?, String?) -> Unit,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onForward: (String, String) -> Unit,
@@ -370,7 +370,7 @@ fun ChatScreen(
                                             input = ""
                                         }
                                         text.isNotEmpty() -> {
-                                            onSend(text, MessageKind.TEXT, null, null, replying?.text)
+                                            onSend(text, MessageKind.TEXT, null, null, replying?.text, replying?.id)
                                             input = ""
                                             replying = null
                                         }
@@ -598,7 +598,7 @@ fun ChatScreen(
                                     .clip(RoundedCornerShape(12.dp))
                                     .combinedClickable(
                                         onClick = {
-                                            onSend("", MessageKind.STICKER, null, sticker, replying?.text)
+                                            onSend("", MessageKind.STICKER, null, sticker, replying?.text, replying?.id)
                                             showStickers = false
                                             replying = null
                                         },
@@ -693,6 +693,7 @@ fun ChatScreen(
                             ),
                             null,
                             replying?.text,
+                            replying?.id,
                         )
                         replying = null
                         pending = null
@@ -876,7 +877,13 @@ private fun MessageBubble(
                             MessageStatus.SENT -> Icons.Filled.Check
                             else -> Icons.Filled.Check
                         },
-                        contentDescription = null,
+                        contentDescription = when (message.status) {
+                            MessageStatus.READ -> "Прочитано"
+                            MessageStatus.DELIVERED -> "Доставлено"
+                            MessageStatus.SENT -> "Отправлено"
+                            MessageStatus.SENDING -> "Отправляется"
+                            MessageStatus.FAILED -> "Не отправлено"
+                        },
                         tint = if (message.status == MessageStatus.READ) Color(0xFFB9F6CA) else secondary,
                         modifier = Modifier.size(14.dp),
                     )

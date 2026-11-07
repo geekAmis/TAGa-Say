@@ -5,12 +5,21 @@ import android.util.Base64
 import android.util.Log
 import com.tagasay.app.data.AppRepository
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
+import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.core.crypto.MessageFraming
 import java.util.UUID
 
 /**
- * Синхронизация личных чатов с relay: отправка E2EE-конвертов и приём очереди.
+ * Синхронизация личных чатов с relay.
+ *
+ * Наружу уходит только шифрованный [WireMessage]. Один формат покрывает текст,
+ * вложения, редактирование, удаление и квитанции доставки/прочтения. Получатель
+ * использует тот же id сообщения, что и отправитель, поэтому квитанции ссылаются
+ * на стабильные идентификаторы.
  */
 class ChatSync(
     private val api: TagaApi,
@@ -19,10 +28,33 @@ class ChatSync(
     private val mediaTransfer: MediaTransfer,
 ) {
 
-    suspend fun send(chatId: String, text: String): Result<Unit> = runCatching {
+    // --------------------------------------------------------------- outgoing
+
+    suspend fun send(
+        chatId: String,
+        messageId: String,
+        text: String,
+        kind: MessageKind = MessageKind.TEXT,
+        sticker: String? = null,
+        replyToId: String? = null,
+        replyToText: String? = null,
+        forwardedFrom: String? = null,
+    ): Result<Unit> = runCatching {
         val chat = directChat(chatId)
-        val ciphertext = messenger.encryptFor(chat.username, text.toByteArray())
-        sendEnvelope(chat, ciphertext)
+        sendWire(
+            chat,
+            WireMessage(
+                type = WireMessage.TYPE_TEXT,
+                id = messageId,
+                timestamp = System.currentTimeMillis(),
+                text = text,
+                kind = kind.name,
+                sticker = sticker,
+                replyToId = replyToId,
+                replyToText = replyToText,
+                forwardedFrom = forwardedFrom,
+            ),
+        )
     }
 
     /**
@@ -31,29 +63,122 @@ class ChatSync(
      */
     suspend fun sendAttachment(
         chatId: String,
+        messageId: String,
         kind: MessageKind,
         attachment: Attachment,
         source: Uri,
         caption: String,
+        replyToId: String?,
         replyToText: String?,
-    ): Result<Uri> = runCatching {
+    ): Result<MediaTransfer.Prepared> = runCatching {
         val chat = directChat(chatId)
         val prepared = mediaTransfer.prepare(attachment, source)
-        val wire = MediaTransfer.MediaWire(
-            kind = kind.name,
-            name = attachment.name,
-            mimeType = attachment.mimeType,
-            sizeBytes = attachment.sizeBytes,
-            sha256 = attachment.sha256,
-            scanVerdict = attachment.scanVerdict.name,
-            mediaId = prepared.mediaId,
-            keyBase64 = prepared.keyBase64,
-            caption = caption,
-            replyToText = replyToText,
+        sendWire(
+            chat,
+            WireMessage(
+                type = WireMessage.TYPE_MEDIA,
+                id = messageId,
+                timestamp = System.currentTimeMillis(),
+                text = caption,
+                kind = kind.name,
+                replyToId = replyToId,
+                replyToText = replyToText,
+                attachment = WireAttachment(
+                    kind = kind.name,
+                    name = attachment.name,
+                    mimeType = attachment.mimeType,
+                    sizeBytes = attachment.sizeBytes,
+                    sha256 = attachment.sha256,
+                    scanVerdict = attachment.scanVerdict.name,
+                    mediaId = prepared.mediaId,
+                    keyBase64 = prepared.keyBase64,
+                ),
+            ),
         )
-        val ciphertext = messenger.encryptFor(chat.username, mediaTransfer.encode(wire))
-        sendEnvelope(chat, ciphertext)
-        prepared.cachedUri
+        prepared
+    }
+
+    /** Пересылает уже существующее сообщение, не загружая блоб повторно. */
+    suspend fun forward(chatId: String, message: Message, forwardedFrom: String): Result<Unit> =
+        runCatching {
+            val chat = directChat(chatId)
+            val attachment = message.attachment
+            val wire = if (attachment?.mediaId != null && attachment.keyBase64 != null) {
+                WireMessage(
+                    type = WireMessage.TYPE_MEDIA,
+                    id = message.id,
+                    timestamp = System.currentTimeMillis(),
+                    text = message.text,
+                    kind = message.kind.name,
+                    sticker = message.sticker,
+                    forwardedFrom = forwardedFrom,
+                    attachment = WireAttachment(
+                        kind = message.kind.name,
+                        name = attachment.name,
+                        mimeType = attachment.mimeType,
+                        sizeBytes = attachment.sizeBytes,
+                        sha256 = attachment.sha256,
+                        scanVerdict = attachment.scanVerdict.name,
+                        mediaId = attachment.mediaId,
+                        keyBase64 = attachment.keyBase64,
+                    ),
+                )
+            } else {
+                WireMessage(
+                    type = WireMessage.TYPE_TEXT,
+                    id = message.id,
+                    timestamp = System.currentTimeMillis(),
+                    text = message.text,
+                    kind = message.kind.name,
+                    sticker = message.sticker,
+                    forwardedFrom = forwardedFrom,
+                )
+            }
+            sendWire(chat, wire)
+        }
+
+    suspend fun edit(chatId: String, messageId: String, text: String): Result<Unit> = runCatching {
+        val chat = directChat(chatId)
+        sendWire(
+            chat,
+            WireMessage(
+                type = WireMessage.TYPE_EDIT,
+                id = messageId,
+                timestamp = System.currentTimeMillis(),
+                text = text,
+            ),
+        )
+    }
+
+    suspend fun delete(chatId: String, messageId: String): Result<Unit> = runCatching {
+        val chat = directChat(chatId)
+        sendWire(
+            chat,
+            WireMessage(
+                type = WireMessage.TYPE_DELETE,
+                id = messageId,
+                timestamp = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    /** Отправляет квитанцию о прочтении всех входящих сообщений чата. */
+    suspend fun sendReadReceipt(chatId: String): Result<Unit> = runCatching {
+        val chat = directChat(chatId)
+        val ids = repository.messages(chatId)
+            .filter { !it.isMine && it.status != MessageStatus.FAILED }
+            .map { it.id }
+            .filter { it.isNotBlank() }
+            .takeLast(MAX_RECEIPT_IDS)
+        if (ids.isEmpty()) return@runCatching
+        sendWire(
+            chat,
+            WireMessage(
+                type = WireMessage.TYPE_READ,
+                id = UUID.randomUUID().toString(),
+                ids = ids,
+            ),
+        )
     }
 
     /**
@@ -62,23 +187,7 @@ class ChatSync(
     suspend fun downloadAttachment(attachment: Attachment): Uri =
         mediaTransfer.download(attachment)
 
-    private suspend fun directChat(chatId: String): com.tagasay.app.data.model.Chat {
-        val chat = repository.chat(chatId) ?: error("chat not found")
-        require(chat.type == ChatType.PRIVATE) { "only direct chats are supported" }
-        require(chat.username.isNotBlank()) { "chat has no peer username" }
-        return chat
-    }
-
-    private suspend fun sendEnvelope(chat: com.tagasay.app.data.model.Chat, ciphertext: ByteArray) {
-        api.sendEnvelope(
-            SendEnvelopeRequest(
-                id = UUID.randomUUID().toString(),
-                recipient = chat.username,
-                ciphertext = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
-                sizeClass = sizeClassFor(ciphertext.size),
-            ),
-        )
-    }
+    // ---------------------------------------------------------------- polling
 
     /**
      * Забирает и расшифровывает очередь. Возвращает количество принятых сообщений.
@@ -89,6 +198,8 @@ class ChatSync(
         if (envelopes.isEmpty()) return 0
         var received = 0
         val ackIds = mutableListOf<String>()
+        val delivered = linkedMapOf<String, MutableList<String>>()
+
         for (envelope in envelopes) {
             val payload = runCatching {
                 Base64.decode(envelope.ciphertext, Base64.NO_WRAP)
@@ -100,39 +211,147 @@ class ChatSync(
                     Log.w("TAGaSync", "decrypt failed from ${envelope.sender}: ${it.message}", it)
                 }.getOrNull()
                 if (plaintext != null) {
-                    val wire = mediaTransfer.decode(plaintext)
+                    val wire = WireCodec.decode(plaintext)
                     if (wire != null) {
-                        repository.receiveMessage(
-                            senderUsername = envelope.sender,
-                            text = wire.caption,
-                            kind = runCatching { MessageKind.valueOf(wire.kind) }
-                                .getOrDefault(MessageKind.FILE),
-                            attachment = MediaTransfer.wireToAttachment(wire),
-                            replyToText = wire.replyToText,
-                        )
+                        val created = handleWire(envelope.sender, wire)
+                        if (created) {
+                            received++
+                            if (wire.type == WireMessage.TYPE_TEXT || wire.type == WireMessage.TYPE_MEDIA) {
+                                delivered.getOrPut(envelope.sender) { mutableListOf() } += wire.id
+                            }
+                        }
                     } else {
-                        repository.receiveMessage(
-                            senderUsername = envelope.sender,
-                            text = plaintext.decodeToString(),
-                        )
+                        receiveLegacy(envelope.sender, plaintext)
+                        received++
                     }
-                    received++
                 }
             }
             ackIds += envelope.id
         }
         api.ack(ackIds)
+
+        for ((peer, ids) in delivered) {
+            if (ids.isEmpty()) continue
+            runCatching {
+                sendWireByPeer(
+                    peer,
+                    WireMessage(
+                        type = WireMessage.TYPE_DELIVERED,
+                        id = UUID.randomUUID().toString(),
+                        ids = ids,
+                    ),
+                )
+            }.onFailure {
+                Log.w("TAGaSync", "delivery receipt failed: ${it.message}", it)
+            }
+        }
         return received
     }
 
-    private fun sizeClassFor(size: Int): Int = when {
-        size <= 256 -> 0
-        size <= 1024 -> 1
-        size <= 4096 -> 2
-        size <= 16 * 1024 -> 3
-        size <= 64 * 1024 -> 4
-        size <= 256 * 1024 -> 5
-        size <= 1024 * 1024 -> 6
-        else -> 7
+    /** Применяет структурированное сообщение. true — если появилось новое сообщение. */
+    private fun handleWire(sender: String, wire: WireMessage): Boolean = when (wire.type) {
+        WireMessage.TYPE_TEXT -> {
+            repository.receiveMessage(
+                senderUsername = sender,
+                text = wire.text,
+                messageId = wire.id,
+                timestamp = wire.timestamp,
+                kind = parseKind(wire.kind),
+                sticker = wire.sticker,
+                replyToId = wire.replyToId,
+                replyToText = wire.replyToText,
+                forwardedFrom = wire.forwardedFrom,
+            )
+            true
+        }
+
+        WireMessage.TYPE_MEDIA -> {
+            val attachment = wire.attachment ?: return false
+            repository.receiveMessage(
+                senderUsername = sender,
+                text = wire.text,
+                messageId = wire.id,
+                timestamp = wire.timestamp,
+                kind = parseKind(wire.kind),
+                attachment = attachment.toAttachment(),
+                replyToId = wire.replyToId,
+                replyToText = wire.replyToText,
+                forwardedFrom = wire.forwardedFrom,
+            )
+            true
+        }
+
+        WireMessage.TYPE_EDIT -> {
+            repository.applyRemoteEdit(sender, wire.id, wire.text)
+            false
+        }
+
+        WireMessage.TYPE_DELETE -> {
+            repository.applyRemoteDelete(sender, wire.id)
+            false
+        }
+
+        WireMessage.TYPE_DELIVERED -> {
+            repository.applyReceipt(sender, wire.ids.toSet(), MessageStatus.DELIVERED)
+            false
+        }
+
+        WireMessage.TYPE_READ -> {
+            repository.applyReceipt(sender, wire.ids.toSet(), MessageStatus.READ)
+            false
+        }
+
+        else -> {
+            Log.w("TAGaSync", "unknown wire type ${wire.type} from $sender")
+            false
+        }
+    }
+
+    /** Сообщения, отправленные до появления WireMessage (сырой текст / TAGA-MEDIA). */
+    private fun receiveLegacy(sender: String, plaintext: ByteArray) {
+        val legacy = mediaTransfer.decode(plaintext)
+        if (legacy != null) {
+            repository.receiveMessage(
+                senderUsername = sender,
+                text = legacy.caption,
+                kind = runCatching { MessageKind.valueOf(legacy.kind) }
+                    .getOrDefault(MessageKind.FILE),
+                attachment = MediaTransfer.wireToAttachment(legacy),
+                replyToText = legacy.replyToText,
+            )
+        } else {
+            repository.receiveMessage(sender, plaintext.decodeToString())
+        }
+    }
+
+    // ----------------------------------------------------------------- helpers
+
+    private suspend fun directChat(chatId: String): Chat {
+        val chat = repository.chat(chatId) ?: error("chat not found")
+        require(chat.type == ChatType.PRIVATE) { "only direct chats are supported" }
+        require(chat.username.isNotBlank()) { "chat has no peer username" }
+        return chat
+    }
+
+    private suspend fun sendWire(chat: Chat, wire: WireMessage) =
+        sendWireByPeer(chat.username, wire)
+
+    private suspend fun sendWireByPeer(peer: String, wire: WireMessage) {
+        val ciphertext = messenger.encryptFor(peer, WireCodec.encode(wire))
+        api.sendEnvelope(
+            SendEnvelopeRequest(
+                id = UUID.randomUUID().toString(),
+                recipient = peer,
+                ciphertext = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
+                sizeClass = MessageFraming.sizeClassFor(ciphertext.size),
+            ),
+        )
+    }
+
+    private fun parseKind(value: String): MessageKind =
+        runCatching { MessageKind.valueOf(value) }.getOrDefault(MessageKind.TEXT)
+
+    private companion object {
+        const val MAX_RECEIPT_IDS = 200
     }
 }

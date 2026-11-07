@@ -40,16 +40,55 @@ message SealedEnvelope {
 ```
 
 - `recipient` не содержит user_id.
-- `ciphertext` включает `MessageProto` (тип, текст/медиа-ключ, reply, forward, TTL).
-- Паддинг до класса: 256 B, 1 KiB, 4 KiB, 16 KiB, 64 KiB, 256 KiB, 1 MiB, 4 MiB.
+- `ciphertext` — вывод Double Ratchet над кадрированным `WireMessage` (см. ниже).
+- Перед шифрованием открытый текст получает заголовок `"TGF1"` + 4-байтную длину
+  и padding до класса: 256 B, 1 KiB, 4 KiB, 16 KiB, 64 KiB, 256 KiB, 1 MiB.
+  Relay видит только класс, а не точную длину. Старый сырой текст без заголовка
+  принимается как есть (обратная совместимость).
+
+### MessageProto (WireMessage)
+
+Внутри E2EE-конверта лежит JSON с бинарным префиксом `TAGA-WIRE\u0001`:
+
+```json
+{
+  "v": 1,
+  "type": "text | media | edit | delete | delivered | read",
+  "id": "UUID сообщения (стабилен у отправителя и получателя)",
+  "timestamp": 1762473600000,
+  "text": "текст или подпись",
+  "kind": "TEXT | IMAGE | VIDEO | FILE | AUDIO | STICKER",
+  "sticker": null,
+  "replyToId": "UUID цитируемого сообщения",
+  "replyToText": "краткая цитата",
+  "forwardedFrom": "название исходного чата",
+  "attachment": {
+    "kind": "IMAGE",
+    "name": "photo.jpg",
+    "mimeType": "image/jpeg",
+    "sizeBytes": 123456,
+    "sha256": "hex",
+    "scanVerdict": "SAFE | WARNING | DANGEROUS",
+    "mediaId": "capability-id блоба",
+    "keyBase64": "AES-256 ключ файла"
+  },
+  "ids": ["UUID", "..."]
+}
+```
+
+- `text`/`media` — новые сообщения; получатель подтверждает их конвертом
+  `type=delivered` с теми же `ids`.
+- `edit`/`delete` ссылаются на `id`; применяются только к сообщениям собеседника.
+- `read` отправляется при открытии чата (если включены read receipts) и содержит
+  id входящих сообщений; отправитель переводит их в `READ`.
+- Квитанции идемпотентны: повторный `delivered` не понижает `READ`.
 
 ### API
 
 ```
 POST /v1/envelope              отправить конверт
 GET  /v1/envelope?limit=100    забрать пачку (long-poll)
-POST /v1/envelope/{id}/ack     подтвердить доставку
-POST /v1/envelope/{id}/read    отметить прочитанным (опционально)
+POST /v1/envelope/ack          подтвердить доставку ({"ids":[...]})
 ```
 
 Сервер не хранит отправителя конверта. Для ответа используется ratchet-сессия.

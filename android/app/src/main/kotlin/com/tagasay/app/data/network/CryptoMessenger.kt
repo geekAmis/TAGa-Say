@@ -2,6 +2,7 @@ package com.tagasay.app.data.network
 
 import android.util.Base64
 import com.tagasay.app.data.crypto.SignalStore
+import com.tagasay.core.crypto.MessageFraming
 import org.signal.libsignal.protocol.IdentityKey
 import org.signal.libsignal.protocol.SessionBuilder
 import org.signal.libsignal.protocol.SessionCipher
@@ -19,6 +20,9 @@ import org.signal.libsignal.protocol.state.PreKeyBundle
  * Первый конверт к получателю — PreKeySignalMessage, далее обычный SignalMessage.
  * Тип сообщения кодируется первым байтом ciphertext (2/3), чтобы relay не разбирал
  * криптографический конверт.
+ *
+ * Перед шифрованием открытый текст кадрируется ([MessageFraming]): добавляется
+ * length-prefix и padding до класса размера, поэтому relay не видит точную длину.
  */
 class CryptoMessenger(
     private val store: SignalStore,
@@ -30,7 +34,7 @@ class CryptoMessenger(
         if (!store.containsSession(address)) {
             establishSession(username, address)
         }
-        val ciphertext = SessionCipher(store, address).encrypt(plaintext)
+        val ciphertext = SessionCipher(store, address).encrypt(MessageFraming.pad(plaintext))
         return byteArrayOf(ciphertext.type.toByte()) + ciphertext.serialize()
     }
 
@@ -40,11 +44,13 @@ class CryptoMessenger(
         val body = payload.copyOfRange(1, payload.size)
         val address = address(sender)
         val cipher = SessionCipher(store, address)
-        return when (type) {
+        val plaintext = when (type) {
             PRE_KEY_TYPE -> cipher.decrypt(PreKeySignalMessage(body), UsePqRatchet.YES)
             WHISPER_TYPE -> cipher.decrypt(SignalMessage(body))
             else -> error("unsupported signal message type $type")
         }
+        // unpad терпим к сырому тексту старых клиентов: без magic возвращает как есть.
+        return MessageFraming.unpad(plaintext)
     }
 
     private suspend fun establishSession(username: String, address: SignalProtocolAddress) {

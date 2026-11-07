@@ -52,3 +52,7 @@ desktop.ini
 # Server runtime data (mailbox snapshot, encrypted media blobs)
 server/data/
 /data/
+
+# e2e-peer local state / command files
+tools/e2e-peer/*-state.json
+tools/e2e-peer/*-cmd.txt

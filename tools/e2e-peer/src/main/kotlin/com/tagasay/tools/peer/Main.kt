@@ -29,6 +29,7 @@ import org.signal.libsignal.protocol.state.KyberPreKeyRecord
 import org.signal.libsignal.protocol.state.PreKeyBundle
 import org.signal.libsignal.protocol.state.SignedPreKeyRecord
 import org.signal.libsignal.protocol.state.impl.InMemorySignalProtocolStore
+import java.io.File
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.UUID
@@ -38,6 +39,8 @@ import kotlin.system.exitProcess
 private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 private val b64 = Base64.getEncoder()
 private val b64d = Base64.getDecoder()
+private const val PEER_VERIFIER = "peer-verifier-0123456789abcdef0123456789abcdef"
+private const val PEER_DEVICE_HASH = "peer-device-hash-0123456789abcdef0123456789abcdef"
 
 @Serializable data class ChallengeRequest(val deviceKey: String)
 @Serializable data class ChallengeResponse(val challenge: String, val expiresAt: Long = 0)
@@ -46,6 +49,9 @@ private val b64d = Base64.getDecoder()
     val username: String,
     val displayName: String,
     val phoneHash: String? = null,
+    val passwordVerifier: String = PEER_VERIFIER,
+    val deviceHash: String = PEER_DEVICE_HASH,
+    val totpCode: String = "",
     val identityKey: String,
     val signingKey: String,
     val signedPrekey: String,
@@ -92,6 +98,83 @@ private val b64d = Base64.getDecoder()
 )
 @Serializable data class AckRequest(val ids: List<String>)
 
+@Serializable data class WireAttachment(
+    val kind: String = "FILE",
+    val name: String,
+    val mimeType: String? = null,
+    val sizeBytes: Long = 0,
+    val sha256: String = "",
+    val scanVerdict: String = "SAFE",
+    val mediaId: String,
+    val keyBase64: String,
+)
+
+@Serializable data class WireDto(
+    val v: Int = 1,
+    val type: String,
+    val id: String = "",
+    val timestamp: Long = 0,
+    val text: String = "",
+    val kind: String = "TEXT",
+    val sticker: String? = null,
+    val replyToId: String? = null,
+    val replyToText: String? = null,
+    val forwardedFrom: String? = null,
+    val attachment: WireAttachment? = null,
+    val ids: List<String> = emptyList(),
+)
+
+@Serializable data class StoredPeerState(
+    val identity: String,
+    val registrationId: Int,
+    val signedPreKey: String,
+    val kyberPreKey: String,
+    val signingPrivate: String,
+    val signingPublic: String,
+)
+
+/** Совпадает с MessageFraming в android/core/crypto. */
+object Framing {    private val MAGIC = byteArrayOf(0x54, 0x47, 0x46, 0x31) // "TGF1"
+    private val CLASSES = intArrayOf(256, 1024, 4096, 16 * 1024, 64 * 1024, 256 * 1024, 1024 * 1024)
+
+    fun pad(payload: ByteArray): ByteArray {
+        val needed = 8 + payload.size
+        val target = CLASSES.firstOrNull { it >= needed } ?: needed
+        val out = ByteArray(target)
+        MAGIC.copyInto(out, 0)
+        out[4] = (payload.size ushr 24).toByte()
+        out[5] = (payload.size ushr 16).toByte()
+        out[6] = (payload.size ushr 8).toByte()
+        out[7] = payload.size.toByte()
+        payload.copyInto(out, 8)
+        return out
+    }
+
+    fun unpad(framed: ByteArray): ByteArray {
+        if (framed.size < 8) return framed
+        for (i in MAGIC.indices) if (framed[i] != MAGIC[i]) return framed
+        val length = ((framed[4].toInt() and 0xff) shl 24) or
+            ((framed[5].toInt() and 0xff) shl 16) or
+            ((framed[6].toInt() and 0xff) shl 8) or
+            (framed[7].toInt() and 0xff)
+        if (length < 0 || length > framed.size - 8) return framed
+        return framed.copyOfRange(8, 8 + length)
+    }
+}
+
+private val WIRE_PREFIX = "TAGA-WIRE\u0001".toByteArray()
+
+private fun decodeWire(payload: ByteArray): WireDto? {
+    if (payload.size <= WIRE_PREFIX.size) return null
+    for (i in WIRE_PREFIX.indices) if (payload[i] != WIRE_PREFIX[i]) return null
+    return runCatching {
+        json.decodeFromString(
+            WireDto.serializer(),
+            payload.copyOfRange(WIRE_PREFIX.size, payload.size).decodeToString(),
+        )
+    }.getOrNull()
+}
+
 fun main(args: Array<String>) {
     val server = (args.getOrNull(0) ?: "http://127.0.0.1:8080").trimEnd('/')
     val username = (args.getOrNull(1) ?: "anna").lowercase()
@@ -107,36 +190,100 @@ class Peer(private val server: String, private val username: String, private val
         .readTimeout(40, TimeUnit.SECONDS)
         .build()
 
-    private val identity = IdentityKeyPair.generate()
-    private val registrationId = 1000 + SecureRandom().nextInt(10_000)
-    private val signedPreKeyPair = ECKeyPair.generate()
+    private val stateFile = File(System.getenv("PEER_STATE") ?: "peer-state.json")
+    private val savedState: StoredPeerState? = runCatching {
+        if (stateFile.exists()) {
+            json.decodeFromString(StoredPeerState.serializer(), stateFile.readText())
+        } else {
+            null
+        }
+    }.getOrNull()
+
+    private val identity = savedState?.let {
+        runCatching { IdentityKeyPair(b64d.decode(it.identity)) }.getOrNull()
+    } ?: IdentityKeyPair.generate()
+    private val registrationId = savedState?.registrationId ?: (1000 + SecureRandom().nextInt(10_000))
     private val signedPreKeyId = 1
-    private val signedPreKey = SignedPreKeyRecord(
-        signedPreKeyId,
-        System.currentTimeMillis(),
-        signedPreKeyPair,
-        identity.privateKey.calculateSignature(signedPreKeyPair.publicKey.serialize()),
-    )
-    private val kyberKeyPair = KEMKeyPair.generate(KEMKeyType.KYBER_1024)
-    private val kyberPreKey = KyberPreKeyRecord(
-        1,
-        System.currentTimeMillis(),
-        kyberKeyPair,
-        identity.privateKey.calculateSignature(kyberKeyPair.publicKey.serialize()),
-    )
+    private val signedPreKey = savedState?.let {
+        runCatching { SignedPreKeyRecord(b64d.decode(it.signedPreKey)) }.getOrNull()
+    } ?: run {
+        val pair = ECKeyPair.generate()
+        SignedPreKeyRecord(
+            signedPreKeyId,
+            System.currentTimeMillis(),
+            pair,
+            identity.privateKey.calculateSignature(pair.publicKey.serialize()),
+        )
+    }
+    private val kyberPreKey = savedState?.let {
+        runCatching { KyberPreKeyRecord(b64d.decode(it.kyberPreKey)) }.getOrNull()
+    } ?: run {
+        val pair = KEMKeyPair.generate(KEMKeyType.KYBER_1024)
+        KyberPreKeyRecord(
+            1,
+            System.currentTimeMillis(),
+            pair,
+            identity.privateKey.calculateSignature(pair.publicKey.serialize()),
+        )
+    }
     private val store = InMemorySignalProtocolStore(identity, registrationId).apply {
         storeSignedPreKey(signedPreKeyId, signedPreKey)
         storeKyberPreKey(1, kyberPreKey)
     }
-    private val signing = generateSigningKey()
+    private val signing = savedState?.let {
+        runCatching {
+            Ed25519PrivateKeyParameters(b64d.decode(it.signingPrivate), 0) to
+                b64d.decode(it.signingPublic)
+        }.getOrNull()
+    } ?: generateSigningKey()
     private var token: String? = null
     @Volatile private var stopped = false
+
+    init {
+        if (savedState == null) saveState()
+    }
+
+    private fun saveState() {
+        val state = StoredPeerState(
+            identity = b64.encodeToString(identity.serialize()),
+            registrationId = registrationId,
+            signedPreKey = b64.encodeToString(signedPreKey.serialize()),
+            kyberPreKey = b64.encodeToString(kyberPreKey.serialize()),
+            signingPrivate = b64.encodeToString(signing.first.encoded),
+            signingPublic = b64.encodeToString(signing.second),
+        )
+        stateFile.writeText(json.encodeToString(StoredPeerState.serializer(), state))
+    }
 
     fun run() {
         register()
         println("READY as @$username (peer device). Type text to send to @lilanga, Ctrl+C to exit.")
         Thread(::pollLoop, "peer-poll").apply { isDaemon = true }.start()
-        System.getenv("PEER_SEND")?.takeIf { it.isNotBlank() }?.let { send("lilanga", it) }
+        Thread(::watchCommands, "peer-cmd").apply { isDaemon = true }.start()
+        System.getenv("PEER_SEND")?.takeIf { it.isNotBlank() }?.let { text ->
+            val target = System.getenv("PEER_TO")?.takeIf { it.isNotBlank() } ?: "lilanga"
+            val id = send(target, text)
+            val edit = System.getenv("PEER_EDIT")?.takeIf { it.isNotBlank() }
+            val delete = System.getenv("PEER_DELETE") == "1"
+            Thread {
+                Thread.sleep(4_000)
+                if (edit != null) {
+                    sendWire(
+                        target,
+                        WireDto(type = "edit", id = id, timestamp = System.currentTimeMillis(), text = edit),
+                    )
+                    println("edited $id -> $edit")
+                }
+                if (delete) {
+                    Thread.sleep(3_000)
+                    sendWire(
+                        target,
+                        WireDto(type = "delete", id = id, timestamp = System.currentTimeMillis()),
+                    )
+                    println("deleted $id")
+                }
+            }.apply { isDaemon = true }.start()
+        }
         if (System.getenv("PEER_HOLD") == "1") {
             while (!stopped) Thread.sleep(1_000)
             return
@@ -153,6 +300,58 @@ class Peer(private val server: String, private val username: String, private val
     }
 
     fun stop() { stopped = true }
+
+    /**
+     * Позволяет управлять живым peer через файл: send:текст, edit:<id>|текст,
+     * delete:<id>, read:<id1,id2>. Удобно для ручных E2E-проверок.
+     */
+    private fun watchCommands() {
+        val file = File(System.getenv("PEER_CMD") ?: "peer-cmd.txt")
+        val target = System.getenv("PEER_TO")?.takeIf { it.isNotBlank() } ?: "lilanga"
+        var last = ""
+        while (!stopped) {
+            val command = runCatching { if (file.exists()) file.readText().trim() else "" }
+                .getOrDefault("")
+            if (command.isNotEmpty() && command != last) {
+                last = command
+                runCatching {
+                    when {
+                        command.startsWith("send:", true) ->
+                            send(target, command.substringAfter(':'))
+                        command.startsWith("edit:", true) -> {
+                            val body = command.substringAfter(':')
+                            val id = body.substringBefore('|')
+                            val text = body.substringAfter('|', "edited")
+                            sendWire(
+                                target,
+                                WireDto(type = "edit", id = id, timestamp = System.currentTimeMillis(), text = text),
+                            )
+                            println("cmd edit $id -> $text")
+                        }
+                        command.startsWith("delete:", true) -> {
+                            val id = command.substringAfter(':')
+                            sendWire(
+                                target,
+                                WireDto(type = "delete", id = id, timestamp = System.currentTimeMillis()),
+                            )
+                            println("cmd delete $id")
+                        }
+                        command.startsWith("read:", true) -> {
+                            val ids = command.substringAfter(':').split(',')
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() }
+                            sendWire(
+                                target,
+                                WireDto(type = "read", id = UUID.randomUUID().toString(), ids = ids),
+                            )
+                            println("cmd read $ids")
+                        }
+                    }
+                }.onFailure { println("cmd failed: ${it.message}") }
+            }
+            Thread.sleep(700)
+        }
+    }
 
     private fun register() {
         val challenge = call(
@@ -174,11 +373,11 @@ class Peer(private val server: String, private val username: String, private val
                         displayName = display,
                         identityKey = b64.encodeToString(identity.publicKey.serialize()),
                         signingKey = b64.encodeToString(signing.second),
-                        signedPrekey = b64.encodeToString(signedPreKeyPair.publicKey.serialize()),
+                        signedPrekey = b64.encodeToString(signedPreKey.keyPair.publicKey.serialize()),
                         signedPrekeySignature = b64.encodeToString(signedPreKey.signature),
                         signedPrekeyId = signedPreKeyId,
                         registrationId = registrationId,
-                        kyberPrekey = b64.encodeToString(kyberKeyPair.publicKey.serialize()),
+                        kyberPrekey = b64.encodeToString(kyberPreKey.keyPair.publicKey.serialize()),
                         kyberPrekeySignature = b64.encodeToString(kyberPreKey.signature),
                         kyberPrekeyId = 1,
                         challenge = challenge.challenge,
@@ -205,14 +404,41 @@ class Peer(private val server: String, private val username: String, private val
                             val body = payload.copyOfRange(1, payload.size)
                             val address = SignalProtocolAddress(envelope.sender, 1)
                             val cipher = SessionCipher(store, address)
-                            val plain = when (type) {
-                                3 -> cipher.decrypt(PreKeySignalMessage(body), UsePqRatchet.YES)
-                                else -> cipher.decrypt(SignalMessage(body))
-                            }
-                            val text = plain.decodeToString()
-                            println("[${envelope.sender}] $text")
-                            System.getenv("PEER_AUTOREPLY")?.takeIf { it.isNotBlank() }?.let {
-                                send(envelope.sender, "$it: $text")
+                            val plain = Framing.unpad(
+                                when (type) {
+                                    3 -> cipher.decrypt(PreKeySignalMessage(body), UsePqRatchet.YES)
+                                    else -> cipher.decrypt(SignalMessage(body))
+                                },
+                            )
+                            val wire = decodeWire(plain)
+                            if (wire != null) {
+                                when (wire.type) {
+                                    "text", "media" -> {
+                                        println("[${envelope.sender}] ${wire.text}")
+                                        sendWire(
+                                            envelope.sender,
+                                            WireDto(
+                                                type = "delivered",
+                                                id = UUID.randomUUID().toString(),
+                                                ids = listOf(wire.id),
+                                            ),
+                                        )
+                                        System.getenv("PEER_AUTOREPLY")?.takeIf { it.isNotBlank() }?.let {
+                                            send(envelope.sender, "$it: ${wire.text}")
+                                        }
+                                    }
+                                    "edit" -> println("[edit ${wire.id}] ${wire.text}")
+                                    "delete" -> println("[delete ${wire.id}]")
+                                    "delivered" -> println("[delivered] ${wire.ids}")
+                                    "read" -> println("[read] ${wire.ids}")
+                                    else -> println("[wire ${wire.type}]")
+                                }
+                            } else {
+                                val text = plain.decodeToString()
+                                println("[${envelope.sender}] $text")
+                                System.getenv("PEER_AUTOREPLY")?.takeIf { it.isNotBlank() }?.let {
+                                    send(envelope.sender, "$it: $text")
+                                }
                             }
                         }.onFailure { println("decrypt failed: ${it.message}") }
                         ids += envelope.id
@@ -226,7 +452,29 @@ class Peer(private val server: String, private val username: String, private val
         }
     }
 
-    private fun send(target: String, text: String) {
+    private fun send(target: String, text: String): String {
+        val id = UUID.randomUUID().toString()
+        sendWire(
+            target,
+            WireDto(
+                type = "text",
+                id = id,
+                timestamp = System.currentTimeMillis(),
+                text = text,
+            ),
+        )
+        println("sent to @$target: $text (id=$id)")
+        return id
+    }
+
+    private fun sendWire(target: String, wire: WireDto) =
+        sendPlain(
+            target,
+            Framing.pad(WIRE_PREFIX + json.encodeToString(WireDto.serializer(), wire).encodeToByteArray()),
+            null,
+        )
+
+    private fun sendPlain(target: String, plaintext: ByteArray, successLog: String?) {
         try {
             val address = SignalProtocolAddress(target.trimStart('@'), 1)
             if (!store.containsSession(address)) {
@@ -249,7 +497,7 @@ class Peer(private val server: String, private val username: String, private val
                 )
                 SessionBuilder(store, address).process(preKey, UsePqRatchet.YES)
             }
-            val cipher = SessionCipher(store, address).encrypt(text.toByteArray())
+            val cipher = SessionCipher(store, address).encrypt(plaintext)
             val payload = byteArrayOf(cipher.type.toByte()) + cipher.serialize()
             val envelope = SendEnvelopeRequest(
                 id = UUID.randomUUID().toString(),
@@ -257,7 +505,7 @@ class Peer(private val server: String, private val username: String, private val
                 ciphertext = b64.encodeToString(payload),
             )
             post("/v1/envelope", json.encodeToString(envelope))
-            println("sent to @$target: $text")
+            if (successLog != null) println(successLog)
         } catch (e: Exception) {
             println("send error: ${e.message}")
         }

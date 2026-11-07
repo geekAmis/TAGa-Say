@@ -54,6 +54,7 @@ class AppRepository(private val store: VaultStore) {
         attachment: Attachment? = null,
         sticker: String? = null,
         replyToText: String? = null,
+        replyToId: String? = null,
         forwardedFrom: String? = null,
         senderName: String = "Вы",
         isMine: Boolean = true,
@@ -72,6 +73,7 @@ class AppRepository(private val store: VaultStore) {
             attachment = attachment,
             sticker = sticker,
             replyToText = replyToText,
+            replyToId = replyToId,
             forwardedFrom = forwardedFrom,
         )
         updateVault { data ->
@@ -124,8 +126,11 @@ class AppRepository(private val store: VaultStore) {
             data.copy(
                 messages = data.messages + (chatId to list),
                 chats = data.chats.map { chat ->
-                    if (chat.id == chatId && last != null) {
-                        chat.copy(lastMessage = preview(last), lastTimestamp = last.timestamp)
+                    if (chat.id == chatId) {
+                        chat.copy(
+                            lastMessage = last?.let(::preview).orEmpty(),
+                            lastTimestamp = last?.timestamp ?: chat.lastTimestamp,
+                        )
                     } else {
                         chat
                     }
@@ -134,10 +139,10 @@ class AppRepository(private val store: VaultStore) {
         }
     }
 
-    fun forwardMessage(sourceChatId: String, messageId: String, targetChatId: String) {
-        val source = messages(sourceChatId).firstOrNull { it.id == messageId } ?: return
+    fun forwardMessage(sourceChatId: String, messageId: String, targetChatId: String): Message? {
+        val source = messages(sourceChatId).firstOrNull { it.id == messageId } ?: return null
         val sourceTitle = chat(sourceChatId)?.title ?: "чат"
-        sendMessage(
+        return sendMessage(
             chatId = targetChatId,
             text = source.text,
             kind = source.kind,
@@ -149,21 +154,29 @@ class AppRepository(private val store: VaultStore) {
 
     /**
      * Приём E2EE-сообщения: создаёт личный чат, если его ещё нет, и увеличивает unread.
+     * Повторный конверт с тем же [messageId] игнорируется (дедупликация redelivery).
      */
     fun receiveMessage(
         senderUsername: String,
         text: String,
+        messageId: String? = null,
+        timestamp: Long = 0,
         kind: MessageKind = MessageKind.TEXT,
         attachment: Attachment? = null,
+        sticker: String? = null,
+        replyToId: String? = null,
         replyToText: String? = null,
+        forwardedFrom: String? = null,
     ) {
         val clean = senderUsername.trimStart('@')
         if (clean.isBlank()) return
-        val now = System.currentTimeMillis()
+        val now = if (timestamp > 0) timestamp else System.currentTimeMillis()
+        val id = messageId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
         val existing = _vault.value.chats.firstOrNull {
             it.type == ChatType.PRIVATE && it.username.equals(clean, ignoreCase = true)
         }
         val chatId = existing?.id ?: "dm_${clean.lowercase()}"
+        if (_vault.value.messages[chatId].orEmpty().any { it.id == id }) return
         val chat = existing ?: Chat(
             id = chatId,
             title = "@$clean",
@@ -177,7 +190,7 @@ class AppRepository(private val store: VaultStore) {
             .firstOrNull { it.username.equals(clean, true) }
             ?.displayName ?: "@$clean"
         val message = Message(
-            id = UUID.randomUUID().toString(),
+            id = id,
             chatId = chatId,
             senderId = clean,
             senderName = senderName,
@@ -187,7 +200,10 @@ class AppRepository(private val store: VaultStore) {
             status = MessageStatus.DELIVERED,
             kind = kind,
             attachment = attachment,
+            sticker = sticker,
+            replyToId = replyToId,
             replyToText = replyToText,
+            forwardedFrom = forwardedFrom,
         )
         updateVault { data ->
             data.copy(
@@ -215,23 +231,59 @@ class AppRepository(private val store: VaultStore) {
         updateVault { data ->
             data.copy(chats = data.chats.map { if (it.id == chatId) it.copy(unread = 0) else it })
         }
-        // Outgoing messages become "read" when the peer is simulated as online.
+    }
+
+    /** Редактирование сообщения собеседником. Свои сообщения менять нельзя. */
+    fun applyRemoteEdit(peerUsername: String, messageId: String, text: String) {
+        val chat = chatByUsername(peerUsername) ?: return
+        if (messageId.isBlank() || text.isBlank()) return
         updateVault { data ->
+            val list = data.messages[chat.id].orEmpty().map { message ->
+                if (message.id == messageId && !message.isMine) {
+                    message.copy(text = text, edited = true)
+                } else {
+                    message
+                }
+            }
+            val last = list.lastOrNull()
             data.copy(
-                messages = data.messages.mapValues { (id, list) ->
-                    if (id != chatId) {
-                        list
+                messages = data.messages + (chat.id to list),
+                chats = data.chats.map { item ->
+                    if (item.id == chat.id && last?.id == messageId) {
+                        item.copy(lastMessage = preview(last), lastTimestamp = last.timestamp)
                     } else {
-                        list.map {
-                            if (it.isMine && it.status != MessageStatus.FAILED) {
-                                it.copy(status = MessageStatus.READ)
-                            } else {
-                                it
-                            }
-                        }
+                        item
                     }
                 },
             )
+        }
+    }
+
+    /** Удаление сообщения собеседником. */
+    fun applyRemoteDelete(peerUsername: String, messageId: String) {
+        val chat = chatByUsername(peerUsername) ?: return
+        val exists = messages(chat.id).any { it.id == messageId && !it.isMine }
+        if (exists) deleteMessage(chat.id, messageId)
+    }
+
+    /**
+     * Квитанция доставки/прочтения: обновляет статусы только своих сообщений.
+     * READ нельзя понизить до DELIVERED, если квитанции пришли не по порядку.
+     */
+    fun applyReceipt(peerUsername: String, ids: Set<String>, status: MessageStatus) {
+        val chat = chatByUsername(peerUsername) ?: return
+        if (ids.isEmpty()) return
+        updateVault { data ->
+            val list = data.messages[chat.id].orEmpty().map { message ->
+                if (!message.isMine || message.id !in ids) return@map message
+                val next = when {
+                    status == MessageStatus.READ -> MessageStatus.READ
+                    message.status == MessageStatus.READ -> MessageStatus.READ
+                    else -> status
+                }
+                message.copy(status = next)
+            }
+            data.copy(messages = data.messages + (chat.id to list))
         }
     }
 
