@@ -283,6 +283,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setReadReceipts(enabled: Boolean) = updateSettings { it.copy(readReceipts = enabled) }
     fun setNotifications(enabled: Boolean) = updateSettings { it.copy(notifications = enabled) }
     fun setShowTyping(enabled: Boolean) = updateSettings { it.copy(showTyping = enabled) }
+    fun setScreenSecurity(enabled: Boolean) = updateSettings { it.copy(screenSecurity = enabled) }
     fun setServerUrl(url: String) = updateSettings { it.copy(serverUrl = url.trim()) }
 
     fun updateProfile(displayName: String, username: String, phone: String, bio: String) {

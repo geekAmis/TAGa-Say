@@ -25,6 +25,7 @@ class SettingsStore(private val context: Context) {
         val notifications = booleanPreferencesKey("notifications")
         val serverUrl = stringPreferencesKey("server_url")
         val showTyping = booleanPreferencesKey("show_typing")
+        val screenSecurity = booleanPreferencesKey("screen_security")
     }
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
@@ -39,6 +40,7 @@ class SettingsStore(private val context: Context) {
             notifications = prefs[Keys.notifications] ?: true,
             serverUrl = prefs[Keys.serverUrl] ?: BuildConfig.DEFAULT_SERVER_URL,
             showTyping = prefs[Keys.showTyping] ?: true,
+            screenSecurity = prefs[Keys.screenSecurity] ?: true,
         )
     }
 
@@ -55,6 +57,7 @@ class SettingsStore(private val context: Context) {
                 notifications = prefs[Keys.notifications] ?: true,
                 serverUrl = prefs[Keys.serverUrl] ?: BuildConfig.DEFAULT_SERVER_URL,
                 showTyping = prefs[Keys.showTyping] ?: true,
+                screenSecurity = prefs[Keys.screenSecurity] ?: true,
             )
             val next = transform(current)
             prefs[Keys.onboarded] = next.onboarded
@@ -67,6 +70,7 @@ class SettingsStore(private val context: Context) {
             prefs[Keys.notifications] = next.notifications
             prefs[Keys.serverUrl] = next.serverUrl
             prefs[Keys.showTyping] = next.showTyping
+            prefs[Keys.screenSecurity] = next.screenSecurity
         }
     }
 

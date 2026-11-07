@@ -211,6 +211,7 @@ private fun MainNavHost(
                         onReadReceipts = viewModel::setReadReceipts,
                         onNotifications = viewModel::setNotifications,
                         onShowTyping = viewModel::setShowTyping,
+                        onScreenSecurity = viewModel::setScreenSecurity,
                         onServerUrl = viewModel::setServerUrl,
                         onCheckServer = viewModel::checkServerNow,
                         onResetDemo = viewModel::resetDemoData,

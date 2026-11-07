@@ -3,12 +3,14 @@ package com.tagasay.app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,6 +34,14 @@ class MainActivity : ComponentActivity() {
             val viewModel: MainViewModel = viewModel()
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             val link by deepLink.collectAsStateWithLifecycle()
+
+            LaunchedEffect(state.settings.screenSecurity) {
+                if (state.settings.screenSecurity) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+            }
 
             TAGaSayTheme(darkTheme = state.settings.darkTheme) {
                 Surface(

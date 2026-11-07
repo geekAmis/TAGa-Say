@@ -8,7 +8,10 @@ import com.tagasay.app.data.model.ScanVerdict
 import com.tagasay.core.crypto.CryptoEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
+import java.io.InputStream
 import java.security.MessageDigest
+import java.util.zip.ZipInputStream
 
 /**
  * Клиентский антивирус. Работает до шифрования/отправки файла и не требует
@@ -91,6 +94,12 @@ class FileInspector(
                 warn("Крупный архив: возможна архивная бомба")
             }
             else -> Unit
+        }
+
+        if (detected == "ZIP" || detected == "APK") {
+            inspectArchive(uri).forEach { finding ->
+                if (finding.dangerous) danger(finding.reason) else warn(finding.reason)
+            }
         }
 
         if (isMacroDocument(extension)) {
@@ -189,9 +198,93 @@ class FileInspector(
             parts[parts.size - 2] in setOf("pdf", "doc", "docx", "jpg", "png")
     }
 
+    /**
+     * Проверяет ZIP/APK на path traversal и архивные бомбы. Читает данные
+     * потоково и останавливается при превышении лимитов, не распаковывая
+     * архив на диск.
+     */
+    private fun inspectArchive(uri: Uri): List<ArchiveFinding> {
+        val findings = mutableListOf<ArchiveFinding>()
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { raw ->
+                findings += inspectArchiveStream(raw)
+            }
+        }.onFailure {
+            findings += ArchiveFinding(
+                "Не удалось проверить архив: ${it.message ?: "ошибка"}",
+                false,
+            )
+        }
+        return findings
+    }
+
     companion object {
         private const val HEAD_LIMIT = 1024 * 1024
         private val EXECUTABLE_TYPES = setOf("PE executable", "ELF executable", "Mach-O executable", "APK")
         private val EXECUTABLE_EXTENSIONS = setOf("exe", "dll", "so", "elf", "apk", "bat", "cmd", "ps1", "vbs", "js", "jar", "msi", "scr")
     }
+}
+
+internal data class ArchiveFinding(val reason: String, val dangerous: Boolean)
+
+private const val MAX_ARCHIVE_ENTRIES = 10_000
+private const val MAX_ARCHIVE_UNCOMPRESSED = 200L * 1024 * 1024
+
+/**
+ * Потоково проверяет ZIP на path traversal и архивные бомбы, не распаковывая
+ * архив на диск. Вынесено из класса, чтобы покрывать тестами без Android.
+ */
+internal fun inspectArchiveStream(
+    input: InputStream,
+    maxEntries: Int = MAX_ARCHIVE_ENTRIES,
+    maxUncompressed: Long = MAX_ARCHIVE_UNCOMPRESSED,
+): List<ArchiveFinding> {
+    val findings = mutableListOf<ArchiveFinding>()
+    ZipInputStream(BufferedInputStream(input)).use { zip ->
+        var entries = 0
+        var total = 0L
+        var stop = false
+        val buffer = ByteArray(64 * 1024)
+        while (!stop) {
+            val entry = zip.nextEntry ?: break
+            entries++
+            val name = entry.name.orEmpty()
+            if (isUnsafeArchivePath(name)) {
+                findings += ArchiveFinding("Небезопасный путь в архиве: $name", true)
+            }
+            if (entries > maxEntries) {
+                findings += ArchiveFinding(
+                    "Слишком много файлов в архиве (> $maxEntries)",
+                    true,
+                )
+                stop = true
+                break
+            }
+            if (!entry.isDirectory) {
+                while (true) {
+                    val read = zip.read(buffer)
+                    if (read <= 0) break
+                    total += read
+                    if (total > maxUncompressed) {
+                        findings += ArchiveFinding(
+                            "Архив распаковывается больше ${maxUncompressed / (1024 * 1024)} МиБ — возможна бомба",
+                            true,
+                        )
+                        stop = true
+                        break
+                    }
+                }
+            }
+            if (!stop) zip.closeEntry()
+        }
+    }
+    return findings
+}
+
+internal fun isUnsafeArchivePath(name: String): Boolean {
+    val normalized = name.replace('\\', '/')
+    return normalized.startsWith("/") ||
+        normalized.startsWith("..") ||
+        normalized.contains("../") ||
+        Regex("^[A-Za-z]:").containsMatchIn(normalized)
 }

@@ -140,6 +140,7 @@ data class AppSettings(
     val notifications: Boolean = true,
     val serverUrl: String = "",
     val showTyping: Boolean = true,
+    val screenSecurity: Boolean = true,
 )
 
 data class ServerStatus(

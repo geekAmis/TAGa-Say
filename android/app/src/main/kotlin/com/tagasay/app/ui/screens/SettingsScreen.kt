@@ -89,6 +89,7 @@ fun SettingsScreen(
     onReadReceipts: (Boolean) -> Unit,
     onNotifications: (Boolean) -> Unit,
     onShowTyping: (Boolean) -> Unit,
+    onScreenSecurity: (Boolean) -> Unit,
     onServerUrl: (String) -> Unit,
     onCheckServer: () -> Unit,
     onResetDemo: () -> Unit,
@@ -269,6 +270,13 @@ fun SettingsScreen(
                 subtitle = "Индикатор набора текста",
                 checked = settings.showTyping,
                 onCheckedChange = onShowTyping,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingRow(
+                title = "Защита от скриншотов",
+                subtitle = "FLAG_SECURE: запрет скриншотов и записи экрана",
+                checked = settings.screenSecurity,
+                onCheckedChange = onScreenSecurity,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingRow(
