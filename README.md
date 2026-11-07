@@ -17,6 +17,7 @@ TAGa-Say — закрытая система обмена сообщениями
 > Не включено в 1.0: группы, каналы, звонки, мультиустройство, sealed sender.
 > Перед работой с реальными чувствительными данными требуется внешний аудит —
 > см. [docs/release.md](docs/release.md).
+> Сборки: [GitHub Release v1.0.0](https://github.com/geekAmis/TAGa-Say/releases/tag/v1.0.0).
 
 ---
 
