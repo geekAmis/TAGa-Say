@@ -52,8 +52,8 @@
 ### Что не копируем
 - P-256 ECDH + цепочка `HMAC(root, seq)` — это не Double Ratchet; нет DH-ratchet и
   полноценной пост-компрометации. У нас libsignal.
-- Server-side JWT secret и bcrypt-хранилище паролей — у нас вход по ключу устройства,
-  телефон только для discovery.
+- Server-side JWT secret и bcrypt-хранилище паролей — у нас Argon2id-verifier пароля,
+  device hash и Ed25519-challenge, без телефона.
 - Централизованный Socket.IO без sealed sender; у нас конверты без открытого отправителя.
 - WebRTC full mesh плохо масштабируется; у нас SFU для групп.
 

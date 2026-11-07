@@ -53,7 +53,12 @@ fun Route.authRoutes(store: InMemoryStore) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponse("invalid credentials", "UNAUTHORIZED"))
             return@post
         }
-        if (existing?.totpEnabled == true && !Totp.verify(existing.totpSecret, request.totpCode)) {
+        // 2FA требуется для нового устройства; то же устройство может
+        // перерегистрироваться после рестарта сервера по паролю + device hash.
+        if (existing?.totpEnabled == true &&
+            existing.deviceHash != request.deviceHash &&
+            !Totp.verify(existing.totpSecret, request.totpCode)
+        ) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponse("2FA code required", "TWO_FACTOR_REQUIRED"))
             return@post
         }

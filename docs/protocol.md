@@ -9,9 +9,9 @@
 POST /v1/auth/challenge   { device_pubkey }
 → { challenge, expires_at }
 
-POST /v1/auth/register    { challenge_sig, phone_proof, identity_key,
-                            signed_prekey, prekey_sig, one_time_prekeys[],
-                            username?, device_info }
+POST /v1/auth/register    { username, password_verifier, device_hash,
+                            identity_key, signing_key, signed_prekey,
+                            prekey_sig, kyber_prekeys, challenge_sig }
 → { device_token, delivery_token, server_salt, next_prekey_id }
 
 POST /v1/auth/refresh     (device_token)
@@ -95,7 +95,9 @@ GET  /v1/blob/{id}    → ciphertext
 
 ```
 GET  /v1/users/@username          публичный профиль + ключи
-POST /v1/discovery/phones         { hashes[] } → { matches[] }
+POST /v1/auth/2fa/setup            → { secret, otpauth_uri }
+POST /v1/auth/2fa/enable          { code } → { enabled }
+POST /v1/auth/2fa/disable         { code } → { enabled }
 GET  /v1/users/me
 PATCH /v1/users/me
 ```

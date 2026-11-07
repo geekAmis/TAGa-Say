@@ -10,7 +10,7 @@
 │  Domain / UseCases       │◄────────►│  REST API                 │
 │  Crypto (libsignal)      │  pinning │  Delivery / Mailbox       │
 │  Local DB (SQLCipher)    │          │  Media store (ciphertext) │
-│  Media (encrypted)       │          │  Discovery (hashed phones)│
+│  Media (encrypted)       │          │  Discovery (@username)    │
 │  Calls (WebRTC + E2EE)   │          │  Push (content-free)      │
 └──────────────────────────┘          │  Bot Gateway             │
                                       └──────────┬────────────────┘
@@ -78,7 +78,7 @@ Kotlin/Ktor, PostgreSQL, Redis, S3-совместимое хранилище.
 ### Модель данных (упрощённо)
 
 ```sql
-users(id, username, phone_hash, created_at)
+users(id, username, password_verifier, device_hash, totp_secret, created_at)
 devices(id, user_id, identity_key, signed_prekey, prekey_sig, last_seen)
 one_time_prekeys(device_id, key_id, public_key)
 envelopes(id, recipient_token, ciphertext, size, created_at, expires_at, delivered_at)
