@@ -49,7 +49,7 @@ ReadOnlyPaths=/opt/tagasay
 ```
 
 Хранилище — `InMemoryStore` с JSON-снапшотом в `/opt/tagasay/data/store.json`
-(переживает перезапуск сервиса). Следующий шаг — PostgreSQL и Redis.
+(переживает перезапуск сервиса; права `600`). Следующий шаг — PostgreSQL и Redis.
 
 ## App
 

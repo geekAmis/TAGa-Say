@@ -148,6 +148,12 @@ class InMemoryStore(private val persistPath: String? = null) {
                 file.writeText(temp.readText())
                 temp.delete()
             }
+            runCatching {
+                java.nio.file.Files.setPosixFilePermissions(
+                    file.toPath(),
+                    java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                )
+            }
         }
     }
 
