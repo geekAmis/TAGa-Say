@@ -1,5 +1,6 @@
 package com.tagasay.app.data.network
 
+import com.tagasay.app.BuildConfig
 import com.tagasay.app.data.model.ServerInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -7,6 +8,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import okhttp3.CertificatePinner
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -128,6 +130,18 @@ class TagaApi(
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(40, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
+        .apply {
+            // Опциональный SPKI-пиннинг: задаётся при сборке через -PcertPin.
+            val pin = BuildConfig.CERT_PIN
+            if (pin.isNotBlank()) {
+                val host = baseUrl.substringAfter("://").substringBefore('/').substringBefore(':')
+                certificatePinner(
+                    CertificatePinner.Builder()
+                        .add(host, if (pin.startsWith("sha256/")) pin else "sha256/$pin")
+                        .build(),
+                )
+            }
+        }
         .build()
 
     /**

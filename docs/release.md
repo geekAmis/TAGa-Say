@@ -42,6 +42,28 @@ apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 Ключ и `keystore.properties` не коммитятся (см. `.gitignore`). Храните их
 в офлайн-сейфе; потеря ключа делает обновления невозможными.
 
+### Certificate pinning
+
+Пиннинг включается при сборке и привязывается к хосту relay:
+
+```bash
+cd android
+./gradlew :app:assembleRelease -PcertPin="sha256/<base64 SPKI>"
+```
+
+Получить SPKI сертификата:
+
+```bash
+openssl s_client -connect 83.141.92.137:443 -servername 83-141-92-137.nip.io </dev/null \
+  | openssl x509 -pubkey -noout \
+  | openssl pkey -pubin -outform der \
+  | openssl dgst -sha256 -binary | openssl base64
+```
+
+Для production рекомендуется собственный домен и долгоживущий сертификат:
+Let's Encrypt-лист ротируется, и пин на лист сломает приложение при обновлении.
+Без `-PcertPin` используется только TLS 1.3.
+
 ## 3. Проверка перед выпуском
 
 - [ ] `./gradlew :core:crypto:testDebugUnitTest` — зелёный.

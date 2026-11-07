@@ -13,6 +13,7 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
+val certPin = (project.findProperty("certPin") as String?)?.trim().orEmpty()
 
 android {
     namespace = "com.tagasay.app"
@@ -24,6 +25,7 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "1.0.1"
+        buildConfigField("String", "CERT_PIN", "\"$certPin\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         ndk {

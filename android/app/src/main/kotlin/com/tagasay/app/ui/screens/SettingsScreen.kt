@@ -223,7 +223,7 @@ fun SettingsScreen(
             InfoRow(
                 icon = Icons.Filled.Security,
                 title = "Транспорт",
-                value = "TLS 1.3 + certificate pinning",
+                value = if (BuildConfig.CERT_PIN.isNotBlank()) "TLS 1.3 + pinning" else "TLS 1.3",
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(
