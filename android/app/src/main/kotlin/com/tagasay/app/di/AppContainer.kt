@@ -9,6 +9,7 @@ import com.tagasay.app.data.local.DeviceKeyStore
 import com.tagasay.app.data.local.SettingsStore
 import com.tagasay.app.data.local.VaultStore
 import com.tagasay.app.data.network.AccountManager
+import com.tagasay.app.data.update.UpdateManager
 import com.tagasay.app.security.FileInspector
 import com.tagasay.core.crypto.CryptoEngine
 
@@ -25,6 +26,7 @@ class AppContainer(context: Context) {
     val settingsStore: SettingsStore = SettingsStore(appContext)
     val serverMonitor: ServerMonitor = ServerMonitor()
     val fileInspector: FileInspector = FileInspector(appContext, crypto)
+    val updateManager: UpdateManager by lazy { UpdateManager(appContext, settingsStore) }
 
     val signalStore: SignalStore by lazy { SignalStore(appContext, deviceKeyStore, crypto) }
     val accountManager: AccountManager by lazy {

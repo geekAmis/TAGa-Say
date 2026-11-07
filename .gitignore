@@ -13,6 +13,7 @@ captures/
 
 # Local config & secrets
 local.properties
+REFER_by_owner/
 *.jks
 *.keystore
 keystore.properties

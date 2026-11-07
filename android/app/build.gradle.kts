@@ -14,6 +14,8 @@ val keystoreProperties = Properties().apply {
     }
 }
 val certPin = (project.findProperty("certPin") as String?)?.trim().orEmpty()
+val releaseCertSha256 = (project.findProperty("releaseCert") as String?)?.trim()
+    ?: "abc2e0d9cd77564cabca5aab3bd9ae3d4db644f825473debd4428f24d4d83c1e"
 
 android {
     namespace = "com.tagasay.app"
@@ -23,9 +25,10 @@ android {
         applicationId = "com.tagasay.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.1"
+        versionCode = 5
+        versionName = "1.0.3"
         buildConfigField("String", "CERT_PIN", "\"$certPin\"")
+        buildConfigField("String", "RELEASE_CERT_SHA256", "\"$releaseCertSha256\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         ndk {

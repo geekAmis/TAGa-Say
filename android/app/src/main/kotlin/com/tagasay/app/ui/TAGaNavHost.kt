@@ -35,15 +35,18 @@ import androidx.navigation.compose.rememberNavController
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.UiState
+import com.tagasay.app.data.model.UpdateStatus
 import com.tagasay.app.ui.components.ServerBanner
 import com.tagasay.app.ui.screens.CallScreen
 import com.tagasay.app.ui.screens.ChannelsScreen
 import com.tagasay.app.ui.screens.ChatScreen
 import com.tagasay.app.ui.screens.ChatsScreen
 import com.tagasay.app.ui.screens.ContactsScreen
+import com.tagasay.app.ui.screens.MandatoryUpdateScreen
 import com.tagasay.app.ui.screens.OnboardingScreen
 import com.tagasay.app.ui.screens.ProfileScreen
 import com.tagasay.app.ui.screens.SettingsScreen
+import com.tagasay.app.ui.screens.UpdateBanner
 import com.tagasay.app.ui.theme.TagaPurple
 
 private data class Tab(
@@ -68,6 +71,14 @@ fun TAGaSayRoot(
     openChatId: String? = null,
     onOpenChatConsumed: () -> Unit = {},
 ) {
+    val update = state.update
+    if (update.mandatory) {
+        MandatoryUpdateScreen(
+            update = update,
+            onInstall = viewModel::installUpdate,
+        )
+        return
+    }
     if (state.loading) {
         // Не показываем онбординг, пока DataStore не отдал сохранённые настройки.
         Box(
@@ -86,6 +97,9 @@ fun TAGaSayRoot(
             onDeepLinkConsumed = onDeepLinkConsumed,
             openChatId = openChatId,
             onOpenChatConsumed = onOpenChatConsumed,
+            update = update,
+            onInstallUpdate = viewModel::installUpdate,
+            onDismissUpdate = viewModel::dismissUpdate,
         )
     }
 }
@@ -98,6 +112,9 @@ private fun MainNavHost(
     onDeepLinkConsumed: () -> Unit,
     openChatId: String?,
     onOpenChatConsumed: () -> Unit,
+    update: UpdateStatus,
+    onInstallUpdate: () -> Unit,
+    onDismissUpdate: () -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -160,6 +177,11 @@ private fun MainNavHost(
                 status = state.server,
                 visible = !state.server.online,
                 modifier = if (state.server.online) Modifier else Modifier.statusBarsPadding(),
+            )
+            UpdateBanner(
+                update = update,
+                onInstall = onInstallUpdate,
+                onDismiss = onDismissUpdate,
             )
             NavHost(
                 navController = navController,

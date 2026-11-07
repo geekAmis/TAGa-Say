@@ -41,23 +41,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsStore = container.settingsStore
     private val serverMonitor = container.serverMonitor
     private val syncManager = container.syncManager
+    private val updateManager = container.updateManager
 
     private val fingerprint = kotlinx.coroutines.flow.MutableStateFlow("")
     private val serverInfo = kotlinx.coroutines.flow.MutableStateFlow<ServerInfo?>(null)
+    private val serverAndUpdate = combine(serverInfo, updateManager.status) { info, update ->
+        info to update
+    }
 
     val uiState: StateFlow<UiState> = combine(
         repository.vault,
         settingsStore.settings,
         serverMonitor.status,
         fingerprint,
-        serverInfo,
-    ) { vault, settings, server, fp, info ->
+        serverAndUpdate,
+    ) { vault, settings, server, fp, su ->
         UiState(
             loading = false,
             settings = settings,
             vault = vault,
             server = server,
-            serverInfo = info,
+            serverInfo = su.first,
+            update = su.second,
             fingerprint = fp,
         )
     }.stateIn(
@@ -79,6 +84,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         // Цикл синхронизации живёт в AppContainer и переживает пересоздание Activity.
         syncManager.start()
+        updateManager.start()
         viewModelScope.launch {
             settingsStore.settings
                 .map { it.onboarded }
@@ -334,6 +340,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             serverMonitor.check(settingsStore.settingsValue().serverUrl)
             refreshServerInfo()
         }
+    }
+
+    fun installUpdate() {
+        viewModelScope.launch(Dispatchers.IO) { updateManager.downloadAndInstall() }
+    }
+
+    fun dismissUpdate() = updateManager.dismissOptional()
+
+    fun checkForUpdates() {
+        viewModelScope.launch(Dispatchers.IO) { updateManager.check() }
     }
 
     fun resetDemoData() = repository.resetToDemo()

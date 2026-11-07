@@ -179,5 +179,34 @@ data class UiState(
     val vault: VaultData = VaultData(),
     val server: ServerStatus = ServerStatus(),
     val serverInfo: ServerInfo? = null,
+    val update: UpdateStatus = UpdateStatus(),
     val fingerprint: String = "",
+)
+
+/** Ответ `/v1/version`: политика обновления. */
+@Serializable
+data class UpdateInfo(
+    val versionCode: Int = 0,
+    val versionName: String = "",
+    val mandatory: Boolean = false,
+    val minSupportedVersionCode: Int = 0,
+    val sha256: String = "",
+    val downloadUrl: String? = null,
+    val mirrorUrl: String? = null,
+    val notes: String = "",
+    val available: Boolean = false,
+)
+
+/** Состояние апдейтера для UI. */
+data class UpdateStatus(
+    val available: Boolean = false,
+    val mandatory: Boolean = false,
+    val versionName: String = "",
+    val versionCode: Int = 0,
+    val notes: String = "",
+    val dismissed: Boolean = false,
+    val downloading: Boolean = false,
+    val progress: Int = 0,
+    val readyToInstall: Boolean = false,
+    val error: String? = null,
 )

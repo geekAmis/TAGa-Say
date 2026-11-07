@@ -7,6 +7,7 @@ import com.tagasay.server.routes.directoryRoutes
 import com.tagasay.server.routes.envelopeRoutes
 import com.tagasay.server.routes.healthRoutes
 import com.tagasay.server.routes.mediaRoutes
+import com.tagasay.server.routes.versionRoutes
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -31,6 +32,7 @@ fun Application.module(
     store: InMemoryStore = InMemoryStore(System.getenv("TAGASAY_DATA")),
     media: MediaStore = MediaStore(MediaStore.defaultRoot()),
     aeza: AezaStatus = AezaStatus(),
+    updateStore: UpdateStore = UpdateStore(),
 ) {
     install(ContentNegotiation) {
         json(
@@ -61,5 +63,6 @@ fun Application.module(
         envelopeRoutes(store)
         directoryRoutes(store, aeza)
         mediaRoutes(store, media)
+        versionRoutes(updateStore)
     }
 }

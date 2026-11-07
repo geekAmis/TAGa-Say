@@ -5,6 +5,18 @@
 
 ---
 
+## Release 1.0.3 (автообновление)
+
+- [x] Публичная политика `GET /v1/version` и зеркало `GET /v1/version/apk`.
+- [x] Обязательное обновление: блокирующий экран, кэш mandatory на 30 дней.
+- [x] Необязательное обновление: скрываемая плашка, запоминание отказа по версии.
+- [x] Скачивание с GitHub Release или зеркала, SHA-256 + подпись release-сертификата.
+- [x] Проверено на устройстве: 1.0.2 → 1.0.3, optional и mandatory.
+- [ ] Автоматическая выкладка `version.json` из release workflow.
+- [ ] Серверный архив в каждом GitHub Release.
+
+---
+
 ## Release 1.0.0 (release candidate)
 
 - [x] E2EE 1:1: X3DH + Double Ratchet + PQXDH.
@@ -112,7 +124,8 @@
 
 ## Фаза 6. Усиление приватности (недели 20–23)
 
-- [ ] Certificate pinning + отчёты о нарушениях.
+- [x] Certificate pinning: опциональный SPKI-пин (`-PcertPin`).
+- [ ] Отчёты о нарушениях пиннинга (report-uri).
 - [ ] Отпечатки ключей, QR-верификация собеседника.
 - [ ] Защита от screenshot, блокировка приложения, panic-wipe.
 - [ ] Metadata minimization: ротация delivery-токенов, jitter, cover traffic.

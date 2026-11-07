@@ -3,6 +3,9 @@
     <files-path
         name="media_cache"
         path="media_cache/" />
+    <files-path
+        name="updates"
+        path="updates/" />
     <cache-path
         name="media_cache_tmp"
         path="media_cache/" />
