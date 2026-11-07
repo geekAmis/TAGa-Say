@@ -24,7 +24,7 @@ object Totp {
             "?secret=$secret&issuer=${urlEncode(issuer)}&algorithm=SHA1" +
             "&digits=$DIGITS&period=$PERIOD_SECONDS"
 
-    fun verify(secret: String, code: String, window: Int = 1): Boolean {
+    fun verify(secret: String, code: String, window: Int = 3): Boolean {
         val normalized = code.filter { it.isDigit() }
         if (normalized.length != DIGITS) return false
         val key = base32Decode(secret) ?: return false
