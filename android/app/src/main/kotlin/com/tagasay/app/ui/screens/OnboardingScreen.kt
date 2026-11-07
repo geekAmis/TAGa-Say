@@ -112,15 +112,15 @@ private fun WelcomeStep(onContinue: () -> Unit) {
         )
         Spacer(Modifier.height(18.dp))
         Text(
-            text = "Переписка, файлы и звонки защищены оконечным шифрованием. " +
-                "Сервер не знает ни что вы отправили, ни кому.",
+            text = "Архитектура рассчитана на оконечное шифрование. " +
+                "В alpha данные уже шифруются на устройстве; E2EE-транспорт — следующий этап.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(34.dp))
 
-        Feature(Icons.Filled.Lock, "Сквозное шифрование", "X3DH + Double Ratchet, ключи в Keystore")
+        Feature(Icons.Filled.Lock, "Шифрование", "Локальные ключи в Keystore; E2EE-транспорт — этап 2")
         Feature(Icons.Filled.Shield, "Антивирус", "Проверка файлов до отправки и после получения")
         Feature(Icons.Filled.Call, "Звонки", "Аудио и видео с дополнительным E2EE")
         Feature(Icons.Filled.VerifiedUser, "Контроль приватности", "Поиск по номеру можно отключить")

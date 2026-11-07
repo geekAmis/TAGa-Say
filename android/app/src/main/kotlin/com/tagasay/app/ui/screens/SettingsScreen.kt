@@ -180,7 +180,7 @@ fun SettingsScreen(
             InfoRow(
                 icon = Icons.Filled.Lock,
                 title = "Протокол",
-                value = "X3DH + Double Ratchet (libsignal)",
+                value = "План: libsignal · сейчас AES-256-GCM",
             )
             InfoRow(
                 icon = Icons.Filled.VerifiedUser,
