@@ -1,10 +1,12 @@
 package com.tagasay.app.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,6 +89,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -113,6 +116,7 @@ import com.tagasay.app.ui.theme.TagaAmber
 import com.tagasay.app.ui.theme.TagaGreen
 import com.tagasay.app.ui.theme.TagaPurple
 import com.tagasay.app.ui.theme.TagaRed
+import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 private data class PendingAttachment(val uri: Uri, val report: ScanReport)
@@ -134,6 +138,7 @@ fun ChatScreen(
     onForward: (String, String) -> Unit,
     onMarkRead: () -> Unit,
     onInspect: suspend (Uri) -> ScanReport,
+    onDownloadAttachment: (String) -> Unit,
 ) {
     var input by remember(chat.id) { mutableStateOf("") }
     var editing by remember(chat.id) { mutableStateOf<Message?>(null) }
@@ -143,6 +148,7 @@ fun ChatScreen(
     var showStickers by remember { mutableStateOf(false) }
     var forwarding by remember { mutableStateOf<Message?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+    val requestedDownloads = remember(chat.id) { mutableSetOf<String>() }
 
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
@@ -155,6 +161,29 @@ fun ChatScreen(
             scope.launch {
                 val report = onInspect(uri)
                 pending = PendingAttachment(uri, report)
+            }
+        }
+    }
+
+    val openAttachment: (Message) -> Unit = { message ->
+        val attachment = message.attachment
+        if (attachment != null) {
+            val local = attachment.localUri
+            if (local == null) {
+                if (attachment.mediaId != null) {
+                    onDownloadAttachment(message.id)
+                    scope.launch { snackbar.showSnackbar("Загрузка вложения…") }
+                }
+            } else {
+                runCatching {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(Uri.parse(local), attachment.mimeType ?: "*/*")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Открыть"))
+                }.onFailure {
+                    scope.launch { snackbar.showSnackbar("Нет приложения для этого файла") }
+                }
             }
         }
     }
@@ -417,10 +446,22 @@ fun ChatScreen(
                 if (message.kind == MessageKind.SYSTEM) {
                     SystemMessage(message)
                 } else {
+                    if (
+                        message.kind == MessageKind.IMAGE &&
+                        message.attachment?.mediaId != null &&
+                        message.attachment.localUri == null
+                    ) {
+                        LaunchedEffect(message.id) {
+                            if (requestedDownloads.add(message.id)) {
+                                onDownloadAttachment(message.id)
+                            }
+                        }
+                    }
                     MessageBubble(
                         message = message,
                         showAuthor = chat.type != ChatType.PRIVATE && !message.isMine,
                         onLongPress = { selected = message },
+                        onAttachmentClick = openAttachment,
                     )
                 }
             }
@@ -693,6 +734,7 @@ private fun MessageBubble(
     message: Message,
     showAuthor: Boolean,
     onLongPress: () -> Unit,
+    onAttachmentClick: (Message) -> Unit,
 ) {
     val bubbleColor = if (message.isMine) {
         MaterialTheme.colorScheme.primary
@@ -776,9 +818,9 @@ private fun MessageBubble(
                     fontSize = 64.sp,
                     modifier = Modifier.padding(4.dp),
                 )
-                MessageKind.IMAGE, MessageKind.VIDEO -> MediaAttachment(message, contentColor)
-                MessageKind.AUDIO -> AudioAttachment(message, contentColor, secondary)
-                MessageKind.FILE -> FileAttachment(message, contentColor, secondary)
+                MessageKind.IMAGE, MessageKind.VIDEO -> MediaAttachment(message, onAttachmentClick)
+                MessageKind.AUDIO -> AudioAttachment(message, contentColor, secondary, onAttachmentClick)
+                MessageKind.FILE -> FileAttachment(message, contentColor, secondary, onAttachmentClick)
                 MessageKind.CALL -> CallAttachment(message, contentColor, secondary)
                 else -> if (message.text.isNotBlank()) {
                     Text(
@@ -787,6 +829,23 @@ private fun MessageBubble(
                         color = contentColor,
                     )
                 }
+            }
+
+            if (
+                message.text.isNotBlank() &&
+                message.kind in setOf(
+                    MessageKind.IMAGE,
+                    MessageKind.VIDEO,
+                    MessageKind.AUDIO,
+                    MessageKind.FILE,
+                )
+            ) {
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = contentColor,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
 
             Row(
@@ -828,7 +887,9 @@ private fun MessageBubble(
 }
 
 @Composable
-private fun MediaAttachment(message: Message, contentColor: Color) {
+private fun MediaAttachment(message: Message, onAttachmentClick: (Message) -> Unit) {
+    val attachment = message.attachment
+    val local = attachment?.localUri
     Box(
         modifier = Modifier
             .padding(top = 4.dp)
@@ -839,42 +900,71 @@ private fun MediaAttachment(message: Message, contentColor: Color) {
                 Brush.linearGradient(
                     listOf(Color(0xFF2B2352), Color(0xFF1C3057)),
                 ),
-            ),
+            )
+            .clickable { onAttachmentClick(message) },
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                if (message.kind == MessageKind.VIDEO) Icons.Filled.PlayArrow else Icons.Filled.Image,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(36.dp),
+        if (message.kind == MessageKind.IMAGE && local != null) {
+            AsyncImage(
+                model = local,
+                contentDescription = attachment?.name ?: "Фото",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                message.attachment?.name ?: if (message.kind == MessageKind.VIDEO) "Видео" else "Фото",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 12.dp),
-            )
-            if (message.attachment?.scanVerdict == ScanVerdict.WARNING) {
-                Text(
-                    "⚠ проверено с предупреждением",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TagaAmber,
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    if (message.kind == MessageKind.VIDEO) Icons.Filled.PlayArrow else Icons.Filled.Image,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp),
                 )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    attachment?.name ?: if (message.kind == MessageKind.VIDEO) "Видео" else "Фото",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                val hint = when {
+                    attachment?.mediaId != null && local == null -> "Нажмите, чтобы загрузить"
+                    message.kind == MessageKind.VIDEO && local != null -> "Нажмите, чтобы открыть видео"
+                    else -> null
+                }
+                if (hint != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TagaAmber,
+                    )
+                }
+                if (attachment?.scanVerdict == ScanVerdict.WARNING) {
+                    Text(
+                        "⚠ проверено с предупреждением",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TagaAmber,
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun AudioAttachment(message: Message, contentColor: Color, secondary: Color) {
+private fun AudioAttachment(
+    message: Message,
+    contentColor: Color,
+    secondary: Color,
+    onAttachmentClick: (Message) -> Unit,
+) {
     Row(
         modifier = Modifier
             .padding(top = 4.dp)
-            .width(230.dp),
+            .width(230.dp)
+            .clickable { onAttachmentClick(message) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -909,7 +999,12 @@ private fun AudioAttachment(message: Message, contentColor: Color, secondary: Co
 }
 
 @Composable
-private fun FileAttachment(message: Message, contentColor: Color, secondary: Color) {
+private fun FileAttachment(
+    message: Message,
+    contentColor: Color,
+    secondary: Color,
+    onAttachmentClick: (Message) -> Unit,
+) {
     val attachment = message.attachment ?: return
     Row(
         modifier = Modifier
@@ -917,6 +1012,7 @@ private fun FileAttachment(message: Message, contentColor: Color, secondary: Col
             .width(250.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(contentColor.copy(alpha = 0.12f))
+            .clickable { onAttachmentClick(message) }
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -939,7 +1035,13 @@ private fun FileAttachment(message: Message, contentColor: Color, secondary: Col
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${formatBytes(attachment.sizeBytes)} · ${if (attachment.scanVerdict == ScanVerdict.SAFE) "проверено" else "внимание"}",
+                when {
+                    attachment.mediaId != null && attachment.localUri == null ->
+                        "${formatBytes(attachment.sizeBytes)} · нажмите, чтобы скачать"
+                    attachment.scanVerdict == ScanVerdict.SAFE ->
+                        "${formatBytes(attachment.sizeBytes)} · проверено"
+                    else -> "${formatBytes(attachment.sizeBytes)} · внимание"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = secondary,
             )

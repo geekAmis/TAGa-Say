@@ -12,10 +12,12 @@ import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.ScanReport
 import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.MessageStatus
 import com.tagasay.app.data.model.UiState
 import com.tagasay.app.data.network.ApiException
 import com.tagasay.app.data.network.ChatSync
 import com.tagasay.app.data.network.CryptoMessenger
+import com.tagasay.app.data.network.MediaTransfer
 import com.tagasay.app.data.network.TagaApi
 import com.tagasay.app.data.network.TwoFactorSetupResponse
 import kotlinx.coroutines.CancellationException
@@ -37,6 +39,7 @@ import kotlinx.coroutines.withContext
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val container = (application as TAGaSayApp).container
+    private val appContext = application.applicationContext
     private val repository = container.repository
     private val settingsStore = container.settingsStore
     private val serverMonitor = container.serverMonitor
@@ -102,7 +105,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.i("TAGaSync", "registered as ${session.username} at ${session.serverUrl}")
                 val api = TagaApi(session.serverUrl, session.accessToken)
                 val messenger = CryptoMessenger(container.signalStore, api)
-                val sync = ChatSync(api, messenger, repository)
+                val media = MediaTransfer(appContext, container.crypto, api)
+                val sync = ChatSync(api, messenger, repository, media)
                 chatSync = sync
                 backoff = 2
                 while (viewModelScope.isActive) {
@@ -160,14 +164,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         replyToText: String? = null,
     ) {
         if (text.isBlank() && attachment == null && sticker == null) return
-        repository.sendMessage(chatId, text, kind, attachment, sticker, replyToText)
-        if (kind == MessageKind.TEXT && text.isNotBlank()) {
-            val chat = repository.chat(chatId)
-            if (chat?.type == ChatType.PRIVATE) {
-                viewModelScope.launch(Dispatchers.IO) {
-                    chatSync?.send(chatId, text)
-                }
+        val message = repository.sendMessage(chatId, text, kind, attachment, sticker, replyToText)
+        val chat = repository.chat(chatId) ?: return
+        if (chat.type != ChatType.PRIVATE) return
+        if (kind == MessageKind.SYSTEM || kind == MessageKind.CALL) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val sync = chatSync ?: run {
+                repository.setMessageStatus(chatId, message.id, MessageStatus.FAILED)
+                return@launch
             }
+            val result: Result<Unit> = when {
+                kind == MessageKind.TEXT && text.isNotBlank() -> sync.send(chatId, text)
+                attachment != null -> {
+                    val source = attachment.localUri?.let(Uri::parse)
+                    if (source == null) {
+                        Result.failure(IllegalArgumentException("У вложения нет локального файла"))
+                    } else {
+                        sync.sendAttachment(chatId, kind, attachment, source, text, replyToText)
+                            .map { cached ->
+                                repository.updateAttachment(
+                                    chatId,
+                                    message.id,
+                                    attachment.copy(localUri = cached.toString()),
+                                )
+                            }
+                    }
+                }
+                else -> Result.success(Unit)
+            }
+            repository.setMessageStatus(
+                chatId,
+                message.id,
+                if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED,
+            )
+            result.onFailure { Log.w("TAGaSync", "send failed: ${it.message}", it) }
+        }
+    }
+
+    /**
+     * Скачивает и расшифровывает вложение полученного сообщения.
+     */
+    fun downloadAttachment(chatId: String, messageId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val message = repository.messages(chatId).firstOrNull { it.id == messageId } ?: return@launch
+            val attachment = message.attachment ?: return@launch
+            if (attachment.localUri != null) return@launch
+            val sync = chatSync ?: return@launch
+            runCatching { sync.downloadAttachment(attachment) }
+                .onSuccess { uri ->
+                    repository.updateAttachment(
+                        chatId,
+                        messageId,
+                        attachment.copy(localUri = uri.toString()),
+                    )
+                }
+                .onFailure { Log.w("TAGaMedia", "download failed: ${it.message}", it) }
         }
     }
 

@@ -1,10 +1,12 @@
 package com.tagasay.server
 
 import com.tagasay.server.data.InMemoryStore
+import com.tagasay.server.data.MediaStore
 import com.tagasay.server.routes.authRoutes
 import com.tagasay.server.routes.directoryRoutes
 import com.tagasay.server.routes.envelopeRoutes
 import com.tagasay.server.routes.healthRoutes
+import com.tagasay.server.routes.mediaRoutes
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -28,6 +30,7 @@ fun main() {
 
 fun Application.module(
     store: InMemoryStore = InMemoryStore(System.getenv("TAGASAY_DATA")),
+    media: MediaStore = MediaStore(MediaStore.defaultRoot()),
 ) {
     install(ContentNegotiation) {
         json(
@@ -61,5 +64,6 @@ fun Application.module(
         authRoutes(store)
         envelopeRoutes(store)
         directoryRoutes(store)
+        mediaRoutes(store, media)
     }
 }

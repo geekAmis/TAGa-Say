@@ -100,6 +100,14 @@ data class TwoFactorCodeRequest(val code: String)
 data class TwoFactorStatusResponse(val enabled: Boolean)
 
 @Serializable
+data class MediaUploadResponse(
+    val id: String,
+    val sha256: String = "",
+    val size: Long = 0,
+    val expiresAt: Long = 0,
+)
+
+@Serializable
 private data class ErrorDto(val error: String = "error", val code: String = "ERROR")
 
 class ApiException(val status: Int, message: String) : IOException(message)
@@ -117,6 +125,16 @@ class TagaApi(
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(40, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
+        .build()
+
+    /**
+     * Отдельный клиент для вложений: передача файла может идти дольше
+     * обычного JSON-запроса, поэтому таймауты увеличены.
+     */
+    private val transferClient = client.newBuilder()
+        .readTimeout(5, TimeUnit.MINUTES)
+        .writeTimeout(5, TimeUnit.MINUTES)
+        .callTimeout(10, TimeUnit.MINUTES)
         .build()
 
     suspend fun challenge(signingKeyBase64: String): ChallengeResponse =
@@ -171,6 +189,41 @@ class TagaApi(
     suspend fun twoFactorStatus(): TwoFactorStatusResponse =
         get("/v1/auth/2fa/status", TwoFactorStatusResponse.serializer())
 
+    /**
+     * Загружает ciphertext вложения. Сервер получает только шифротекст.
+     */
+    suspend fun uploadMedia(ciphertext: ByteArray, sha256Hex: String): MediaUploadResponse =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("$baseUrl/v1/media")
+                .post(ciphertext.toRequestBody(OCTET_MEDIA))
+                .header("X-TAGa-Say-Sha256", sha256Hex)
+                .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
+                .build()
+            transferClient.newCall(request).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (!response.isSuccessful) throw ApiException(response.code, errorMessage(text))
+                json.decodeFromString(MediaUploadResponse.serializer(), text)
+            }
+        }
+
+    suspend fun downloadMedia(id: String): ByteArray = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$baseUrl/v1/media/$id")
+            .get()
+            .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
+            .build()
+        transferClient.newCall(request).execute().use { response ->
+            val bytes = response.body?.bytes() ?: ByteArray(0)
+            if (!response.isSuccessful) throw ApiException(response.code, errorMessage(bytes.decodeToString()))
+            bytes
+        }
+    }
+
+    private fun errorMessage(text: String): String = runCatching {
+        json.decodeFromString(ErrorDto.serializer(), text).error
+    }.getOrDefault(text.take(200))
+
     private suspend fun <T> get(path: String, serializer: KSerializer<T>): T =
         withContext(Dispatchers.IO) {
             val request = Request.Builder()
@@ -222,5 +275,6 @@ class TagaApi(
 
     companion object {
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+        private val OCTET_MEDIA = "application/octet-stream".toMediaType()
     }
 }

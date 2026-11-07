@@ -35,6 +35,8 @@ data class Attachment(
     val sha256: String,
     val scanVerdict: ScanVerdict,
     val localUri: String? = null,
+    val mediaId: String? = null,
+    val keyBase64: String? = null,
 )
 
 @Serializable

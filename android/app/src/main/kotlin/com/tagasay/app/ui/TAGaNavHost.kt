@@ -254,6 +254,9 @@ private fun MainNavHost(
                             },
                             onMarkRead = { viewModel.markRead(chatId) },
                             onInspect = { uri -> viewModel.inspectFile(uri) },
+                            onDownloadAttachment = { messageId ->
+                                viewModel.downloadAttachment(chatId, messageId)
+                            },
                         )
                     }
                 }

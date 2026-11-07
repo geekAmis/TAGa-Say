@@ -150,7 +150,13 @@ class AppRepository(private val store: VaultStore) {
     /**
      * Приём E2EE-сообщения: создаёт личный чат, если его ещё нет, и увеличивает unread.
      */
-    fun receiveMessage(senderUsername: String, text: String) {
+    fun receiveMessage(
+        senderUsername: String,
+        text: String,
+        kind: MessageKind = MessageKind.TEXT,
+        attachment: Attachment? = null,
+        replyToText: String? = null,
+    ) {
         val clean = senderUsername.trimStart('@')
         if (clean.isBlank()) return
         val now = System.currentTimeMillis()
@@ -179,6 +185,9 @@ class AppRepository(private val store: VaultStore) {
             timestamp = now,
             isMine = false,
             status = MessageStatus.DELIVERED,
+            kind = kind,
+            attachment = attachment,
+            replyToText = replyToText,
         )
         updateVault { data ->
             data.copy(
@@ -227,6 +236,41 @@ class AppRepository(private val store: VaultStore) {
     }
 
     fun setTyping(chatId: String) = Unit
+
+    /**
+     * Обновляет вложение (например, после скачивания и расшифровки).
+     */
+    fun updateAttachment(chatId: String, messageId: String, attachment: Attachment) {
+        updateVault { data ->
+            data.copy(
+                messages = data.messages.mapValues { (id, list) ->
+                    if (id != chatId) {
+                        list
+                    } else {
+                        list.map { message ->
+                            if (message.id == messageId) message.copy(attachment = attachment) else message
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    fun setMessageStatus(chatId: String, messageId: String, status: MessageStatus) {
+        updateVault { data ->
+            data.copy(
+                messages = data.messages.mapValues { (id, list) ->
+                    if (id != chatId) {
+                        list
+                    } else {
+                        list.map { message ->
+                            if (message.id == messageId) message.copy(status = status) else message
+                        }
+                    }
+                },
+            )
+        }
+    }
 
     // --------------------------------------------------------------- chats
 

@@ -40,16 +40,22 @@ WorkingDirectory=/opt/tagasay
 Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 Environment=TAGASAY_PORT=8080
 Environment=TAGASAY_DATA=/opt/tagasay/data/store.json
+Environment=TAGASAY_MEDIA=/opt/tagasay/data/media
 ExecStart=/opt/tagasay/bin/tagasay-server
 Restart=always
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadOnlyPaths=/opt/tagasay
+ReadWritePaths=/opt/tagasay
 ```
 
 Хранилище — `InMemoryStore` с JSON-снапшотом в `/opt/tagasay/data/store.json`
-(переживает перезапуск сервиса; права `600`). Следующий шаг — PostgreSQL и Redis.
+(переживает перезапуск сервиса; права `600`) и каталог шифрованных вложений
+`/opt/tagasay/data/media` (права `700`). Следующий шаг — PostgreSQL и Redis.
+
+Обновление не должно удалять `/opt/tagasay/data`: распаковывайте архив поверх,
+затем выполните `mkdir -p /opt/tagasay/data/media && chown -R tagasay:tagasay
+/opt/tagasay && chmod 700 /opt/tagasay/data/media`.
 
 ## App
 

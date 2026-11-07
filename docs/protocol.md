@@ -78,18 +78,27 @@ wss://<host>/v1/ws?token=...
 
 ## 4. Медиа
 
+Реализовано в alpha:
+
 ```
-POST /v1/blob/init    { size, sha256, chunks }
-→ { blob_id, upload_urls[] }
+POST   /v1/media          ciphertext (application/octet-stream)
+                          заголовок X-TAGa-Say-Sha256
+       → { id, sha256, size, expires_at }
 
-PUT  <upload_url>     ciphertext chunk (presigned, TTL 1 час)
-POST /v1/blob/commit  { blob_id }
-→ { blob_id, expires_at }
-
-GET  /v1/blob/{id}    → ciphertext
+GET    /v1/media/{id}     → ciphertext
+DELETE /v1/media/{id}
 ```
 
-Сервер видит только размер и хеш шифротекста. Имя, MIME и ключ — внутри E2EE.
+- Клиент шифрует файл AES-256-GCM случайным 256-битным ключом.
+- AAD = `taga/media/v1|<sha256>|<original_name>`.
+- На сервер уходит только ciphertext; `id` — случайная capability (24 байта).
+- Ключ, имя, MIME и SHA-256 передаются внутри E2EE-конверта
+  (бинарный префикс `TAGA-MEDIA` + JSON `MediaWire`).
+- Лимит — 50 МиБ, TTL — 7 дней, хранилище — файловый каталог relay.
+- Получатель проверяет SHA-256 после расшифровки и кеширует файл локально.
+
+Планируется: чанковая загрузка с докачкой, presigned URL и S3-совместимое
+хранилище, потоковое XChaCha20-Poly1305 для больших видео.
 
 ## 5. Directory / discovery
 
