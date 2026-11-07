@@ -61,3 +61,16 @@ ReadWritePaths=/opt/tagasay
 
 - Debug: `http://127.0.0.1:8080` + `adb reverse tcp:8080 tcp:8080`.
 - Release: `https://83-141-92-137.nip.io`.
+
+## Production hardening в 1.0.0
+
+- Rate limits: auth 10–20/мин, envelope 120–240/мин, media 20–120/мин,
+  directory 60–120/мин (ключ — `X-Forwarded-For` от Caddy или прямой IP).
+- Логи relay — только ошибки, без путей, `@username` и id медиа.
+- Mailbox: до 1000 конвертов на устройство, TTL 30 дней, просроченные
+  очищаются при записи и чтении.
+- Медиа: 50 МиБ, TTL 7 дней, права файлов `600`, каталогов `700`.
+- Caddy обязателен: relay слушает `127.0.0.1:8080`, наружу — только TLS.
+- Перед постоянной эксплуатацией: PostgreSQL/Redis, бэкапы с restore-тестом,
+  мониторинг `/health` и 5xx, fail2ban, geo-IP на сервере.
+- Полный чек-лист: [release.md](release.md).

@@ -2,6 +2,7 @@ package com.tagasay.server.routes
 
 import com.tagasay.server.BuildInfo
 import com.tagasay.server.DeviceCrypto
+import com.tagasay.server.RateLimits
 import com.tagasay.server.Totp
 import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.model.AuthedDevice
@@ -26,6 +27,10 @@ import io.ktor.server.routing.post
 
 fun Route.authRoutes(store: InMemoryStore) {
     post("/v1/auth/challenge") {
+        if (!RateLimits.allow(call, "auth-challenge", limit = 20)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@post
+        }
         val request = call.receive<ChallengeRequest>()
         if (!DeviceCrypto.isValidBase64Key(request.deviceKey, 32)) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("invalid device key", "BAD_REQUEST"))
@@ -41,6 +46,10 @@ fun Route.authRoutes(store: InMemoryStore) {
     }
 
     post("/v1/auth/register") {
+        if (!RateLimits.allow(call, "auth-register", limit = 10)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@post
+        }
         val request = call.receive<RegisterRequest>()
         val username = request.username.lowercase()
 

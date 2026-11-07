@@ -1,5 +1,6 @@
 package com.tagasay.server.routes
 
+import com.tagasay.server.RateLimits
 import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.model.DiscoveryRequest
 import com.tagasay.server.model.DiscoveryResponse
@@ -14,6 +15,10 @@ import io.ktor.server.routing.post
 
 fun Route.directoryRoutes(store: InMemoryStore) {
     get("/v1/users/{username}") {
+        if (!RateLimits.allow(call, "directory-user", limit = 60)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@get
+        }
         val username = call.parameters["username"].orEmpty().trimStart('@').lowercase()
         val profile = store.user(username)
         if (profile == null) {
@@ -34,6 +39,10 @@ fun Route.directoryRoutes(store: InMemoryStore) {
     }
 
     get("/v1/keys/{username}") {
+        if (!RateLimits.allow(call, "directory-keys", limit = 120)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@get
+        }
         val username = call.parameters["username"].orEmpty().trimStart('@').lowercase()
         val device = store.deviceByUsername(username)
         if (device == null) {

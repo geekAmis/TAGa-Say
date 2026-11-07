@@ -65,6 +65,8 @@ fun TAGaSayRoot(
     state: UiState,
     deepLink: String?,
     onDeepLinkConsumed: () -> Unit,
+    openChatId: String? = null,
+    onOpenChatConsumed: () -> Unit = {},
 ) {
     if (state.loading) {
         // Не показываем онбординг, пока DataStore не отдал сохранённые настройки.
@@ -82,6 +84,8 @@ fun TAGaSayRoot(
             state = state,
             deepLink = deepLink,
             onDeepLinkConsumed = onDeepLinkConsumed,
+            openChatId = openChatId,
+            onOpenChatConsumed = onOpenChatConsumed,
         )
     }
 }
@@ -92,6 +96,8 @@ private fun MainNavHost(
     state: UiState,
     deepLink: String?,
     onDeepLinkConsumed: () -> Unit,
+    openChatId: String?,
+    onOpenChatConsumed: () -> Unit,
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -103,6 +109,13 @@ private fun MainNavHost(
         if (!deepLink.isNullOrBlank()) {
             navController.navigate("profile/$deepLink") { launchSingleTop = true }
             onDeepLinkConsumed()
+        }
+    }
+
+    LaunchedEffect(openChatId) {
+        if (!openChatId.isNullOrBlank()) {
+            navController.navigate("chat/$openChatId") { launchSingleTop = true }
+            onOpenChatConsumed()
         }
     }
 

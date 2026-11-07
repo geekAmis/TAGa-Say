@@ -34,8 +34,14 @@ class InMemoryStore(private val persistPath: String? = null) {
         load()
     }
 
-    fun newChallenge(deviceKey: String): String = randomToken().also {
-        challenges["$deviceKey:$it"] = System.currentTimeMillis() + CHALLENGE_TTL_MS
+    fun newChallenge(deviceKey: String): String {
+        val now = System.currentTimeMillis()
+        if (challenges.size >= MAX_CHALLENGES) {
+            challenges.entries.removeIf { it.value <= now }
+        }
+        val challenge = randomToken()
+        challenges["$deviceKey:$challenge"] = now + CHALLENGE_TTL_MS
+        return challenge
     }
 
     fun consumeChallenge(deviceKey: String, challenge: String): Boolean {
@@ -86,9 +92,18 @@ class InMemoryStore(private val persistPath: String? = null) {
     fun usersByPhoneHashes(hashes: List<String>): List<String> =
         hashes.mapNotNull { phoneHashes[it] }
 
-    fun putEnvelope(token: String, envelope: Envelope) {
-        mailboxes.computeIfAbsent(token) { mutableListOf() }.add(envelope)
+    fun putEnvelope(
+        token: String,
+        envelope: Envelope,
+        maxPerMailbox: Int = MAX_MAILBOX_ENVELOPES,
+    ): Boolean {
+        val now = System.currentTimeMillis()
+        val queue = mailboxes.computeIfAbsent(token) { mutableListOf() }
+        queue.removeAll { it.expiresAt in 1..now }
+        if (queue.size >= maxPerMailbox) return false
+        queue.add(envelope)
         persist()
+        return true
     }
 
     fun envelopes(token: String, limit: Int): List<Envelope> {
@@ -174,5 +189,7 @@ class InMemoryStore(private val persistPath: String? = null) {
 
     companion object {
         private const val CHALLENGE_TTL_MS = 5 * 60 * 1000L
+        private const val MAX_CHALLENGES = 50_000
+        private const val MAX_MAILBOX_ENVELOPES = 1_000
     }
 }

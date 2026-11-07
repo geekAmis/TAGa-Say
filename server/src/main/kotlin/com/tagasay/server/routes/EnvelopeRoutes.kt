@@ -1,5 +1,6 @@
 package com.tagasay.server.routes
 
+import com.tagasay.server.RateLimits
 import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.model.AckRequest
 import com.tagasay.server.model.Envelope
@@ -17,6 +18,10 @@ import java.util.UUID
 fun Route.envelopeRoutes(store: InMemoryStore) {
     post("/v1/envelope") {
         val authed = call.requireDevice(store) ?: return@post
+        if (!RateLimits.allow(call, "envelope-send", limit = 120)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@post
+        }
         val request = call.receive<SendEnvelopeRequest>()
 
         if (request.recipient.isBlank() || request.ciphertext.isBlank()) {
@@ -54,12 +59,19 @@ fun Route.envelopeRoutes(store: InMemoryStore) {
             expiresAt = now + request.ttlSeconds.coerceIn(60, 30L * 24 * 60 * 60) * 1000,
             ackToken = request.ackToken,
         )
-        store.putEnvelope(recipientToken, envelope)
+        if (!store.putEnvelope(recipientToken, envelope)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("mailbox full", "MAILBOX_FULL"))
+            return@post
+        }
         call.respond(HttpStatusCode.Accepted, mapOf("id" to envelope.id))
     }
 
     get("/v1/envelope") {
         val authed = call.requireDevice(store) ?: return@get
+        if (!RateLimits.allow(call, "envelope-fetch", limit = 240)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@get
+        }
         val token = store.deliveryTokenFor(authed.device.deviceId)
             ?: return@get call.respond(
                 HttpStatusCode.NotFound,

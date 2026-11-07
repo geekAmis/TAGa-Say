@@ -1,5 +1,6 @@
 package com.tagasay.server.routes
 
+import com.tagasay.server.RateLimits
 import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.data.MediaStore
 import com.tagasay.server.model.ErrorResponse
@@ -35,6 +36,10 @@ data class MediaUploadResponse(
 fun Route.mediaRoutes(store: InMemoryStore, media: MediaStore) {
     post("/v1/media") {
         call.requireDevice(store) ?: return@post
+        if (!RateLimits.allow(call, "media-upload", limit = 20)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@post
+        }
 
         val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
         if (declared != null && declared > media.maxBytes) {
@@ -68,6 +73,10 @@ fun Route.mediaRoutes(store: InMemoryStore, media: MediaStore) {
 
     get("/v1/media/{id}") {
         call.requireDevice(store) ?: return@get
+        if (!RateLimits.allow(call, "media-download", limit = 120)) {
+            call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
+            return@get
+        }
         val id = call.parameters["id"].orEmpty()
         val found = media.get(id)
         if (found == null) {

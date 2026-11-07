@@ -1,18 +1,14 @@
-# CI workflows (pending `workflow` scope)
+# CI workflows
 
-GitHub отклонил push файлов из `.github/workflows/`, потому что у текущего PAT нет
-scope `workflow`:
+Активные workflows лежат в `.github/workflows/`:
 
-```
-refusing to allow a Personal Access Token to create or update workflow
-.github/workflows/android.yml without `workflow` scope
-```
+- `android.yml` — unit-тесты `core:crypto` и debug APK;
+- `server.yml` — тесты и дистрибутив relay;
+- `release.yml` — tag-triggered release APK/AAB, серверный tarball и GitHub Release.
 
-Файлы сохранены здесь, чтобы не потерять. Чтобы включить CI:
+Копии сохранены в `ci/github-actions/` как резерв и для переноса в другой форк.
+Секреты подписи и release-чеклист — в `docs/release.md`.
 
-1. Создайте/обновите PAT с правами `repo` + `workflow` (или используйте fine-grained
-   token с `Workflows: Read and write`).
-2. Скопируйте `android.yml` и `server.yml` в `.github/workflows/`.
-3. Закоммитьте и запушьте.
-
-Локально файлы уже готовы и проверены синтаксически.
+Изначально PAT не имел scope `workflow`, поэтому файлы складывались сюда.
+Сейчас пайплайны активны; при смене токена убедитесь, что у него есть
+`repo` + `workflow`.

@@ -8,31 +8,25 @@ import androidx.lifecycle.viewModelScope
 import com.tagasay.app.TAGaSayApp
 import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
-import com.tagasay.app.data.model.ScanReport
-import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.app.data.model.ScanReport
 import com.tagasay.app.data.model.UiState
-import com.tagasay.app.data.network.ApiException
-import com.tagasay.app.data.network.ChatSync
-import com.tagasay.app.data.network.CryptoMessenger
-import com.tagasay.app.data.network.MediaTransfer
 import com.tagasay.app.data.network.TagaApi
 import com.tagasay.app.data.network.TwoFactorSetupResponse
-import kotlinx.coroutines.CancellationException
+import com.tagasay.app.sync.SyncService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -43,10 +37,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = container.repository
     private val settingsStore = container.settingsStore
     private val serverMonitor = container.serverMonitor
+    private val syncManager = container.syncManager
 
     private val fingerprint = kotlinx.coroutines.flow.MutableStateFlow("")
-    @Volatile
-    private var chatSync: ChatSync? = null
 
     val uiState: StateFlow<UiState> = combine(
         repository.vault,
@@ -78,52 +71,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .distinctUntilChanged()
                 .collectLatest { url -> serverMonitor.watch(url) }
         }
+        // Цикл синхронизации живёт в AppContainer и переживает пересоздание Activity.
+        syncManager.start()
         viewModelScope.launch {
             settingsStore.settings
-                .distinctUntilChangedBy { Triple(it.onboarded, it.serverUrl, it.username) }
-                .collectLatest { settings -> runNetworkSync(settings) }
-        }
-    }
-
-    /**
-     * Регистрирует устройство на relay и держит цикл приёма E2EE-конвертов.
-     * При смене сервера/username корутина отменяется и стартует заново.
-     */
-    private suspend fun runNetworkSync(settings: AppSettings) {
-        chatSync = null
-        if (!settings.onboarded || settings.serverUrl.isBlank() || settings.username.isBlank()) return
-        var backoff = 2L
-        while (viewModelScope.isActive) {
-            try {
-                val session = withContext(Dispatchers.IO) {
-                    container.accountManager.ensureRegistered(
-                        serverUrl = settings.serverUrl,
-                        username = settings.username,
-                        displayName = settings.displayName,
-                    )
+                .map { it.onboarded }
+                .distinctUntilChanged()
+                .collect { onboarded ->
+                    if (onboarded) SyncService.start(appContext) else SyncService.stop(appContext)
                 }
-                Log.i("TAGaSync", "registered as ${session.username} at ${session.serverUrl}")
-                val api = TagaApi(session.serverUrl, session.accessToken)
-                val messenger = CryptoMessenger(container.signalStore, api)
-                val media = MediaTransfer(appContext, container.crypto, api)
-                val sync = ChatSync(api, messenger, repository, media)
-                chatSync = sync
-                backoff = 2
-                while (viewModelScope.isActive) {
-                    sync.poll()
-                    delay(3_000)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (exception: Exception) {
-                Log.w("TAGaSync", "sync failed: ${exception.message}", exception)
-                if (exception is ApiException && exception.status == 401) {
-                    container.accountManager.clear()
-                }
-                chatSync = null
-                delay(backoff * 1_000)
-                backoff = (backoff * 2).coerceAtMost(30)
-            }
         }
     }
 
@@ -184,7 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (kind == MessageKind.SYSTEM || kind == MessageKind.CALL) return
 
         viewModelScope.launch(Dispatchers.IO) {
-            val sync = chatSync ?: run {
+            val sync = syncManager.awaitChatSync() ?: run {
                 repository.setMessageStatus(chatId, message.id, MessageStatus.FAILED)
                 return@launch
             }
@@ -243,7 +199,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val message = repository.messages(chatId).firstOrNull { it.id == messageId } ?: return@launch
             val attachment = message.attachment ?: return@launch
             if (attachment.localUri != null) return@launch
-            val sync = chatSync ?: return@launch
+            val sync = syncManager.awaitChatSync() ?: return@launch
             runCatching { sync.downloadAttachment(attachment) }
                 .onSuccess { uri ->
                     repository.updateAttachment(
@@ -261,7 +217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.editMessage(chatId, messageId, text)
         if (repository.chat(chatId)?.type != ChatType.PRIVATE) return
         viewModelScope.launch(Dispatchers.IO) {
-            chatSync?.edit(chatId, messageId, text)
+            syncManager.awaitChatSync()?.edit(chatId, messageId, text)
                 ?.onFailure { Log.w("TAGaSync", "edit failed: ${it.message}", it) }
         }
     }
@@ -270,7 +226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.deleteMessage(chatId, messageId)
         if (repository.chat(chatId)?.type != ChatType.PRIVATE) return
         viewModelScope.launch(Dispatchers.IO) {
-            chatSync?.delete(chatId, messageId)
+            syncManager.awaitChatSync()?.delete(chatId, messageId)
                 ?.onFailure { Log.w("TAGaSync", "delete failed: ${it.message}", it) }
         }
     }
@@ -280,7 +236,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val forwarded = repository.forwardMessage(sourceChatId, messageId, targetChatId) ?: return
         if (repository.chat(targetChatId)?.type != ChatType.PRIVATE) return
         viewModelScope.launch(Dispatchers.IO) {
-            chatSync?.forward(targetChatId, forwarded, sourceTitle)
+            syncManager.awaitChatSync()?.forward(targetChatId, forwarded, sourceTitle)
                 ?.onFailure { Log.w("TAGaSync", "forward failed: ${it.message}", it) }
         }
     }
@@ -292,7 +248,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val receiptsEnabled = runCatching { settingsStore.settings.first().readReceipts }
                 .getOrDefault(true)
             if (!receiptsEnabled) return@launch
-            chatSync?.sendReadReceipt(chatId)
+            syncManager.awaitChatSync()?.sendReadReceipt(chatId)
                 ?.onFailure { Log.w("TAGaSync", "read receipt failed: ${it.message}", it) }
         }
     }
@@ -363,6 +319,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun resetDemoData() = repository.resetToDemo()
 
     fun wipeAll() {
+        SyncService.stop(appContext)
+        syncManager.stop()
         repository.wipeAll()
         container.deviceKeyStore.wipe()
         viewModelScope.launch {

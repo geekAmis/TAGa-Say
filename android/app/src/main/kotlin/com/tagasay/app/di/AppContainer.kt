@@ -3,6 +3,7 @@ package com.tagasay.app.di
 import android.content.Context
 import com.tagasay.app.data.AppRepository
 import com.tagasay.app.data.ServerMonitor
+import com.tagasay.app.data.SyncManager
 import com.tagasay.app.data.crypto.SignalStore
 import com.tagasay.app.data.local.DeviceKeyStore
 import com.tagasay.app.data.local.SettingsStore
@@ -28,5 +29,8 @@ class AppContainer(context: Context) {
     val signalStore: SignalStore by lazy { SignalStore(appContext, deviceKeyStore, crypto) }
     val accountManager: AccountManager by lazy {
         AccountManager(appContext, deviceKeyStore, signalStore, crypto)
+    }
+    val syncManager: SyncManager by lazy {
+        SyncManager(appContext, repository, settingsStore, accountManager, signalStore, crypto)
     }
 }

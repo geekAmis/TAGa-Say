@@ -1,5 +1,6 @@
 package com.tagasay.app.data
 
+import com.tagasay.app.BuildConfig
 import com.tagasay.app.data.local.SampleData
 import com.tagasay.app.data.local.VaultStore
 import com.tagasay.app.data.model.AppSettings
@@ -16,8 +17,11 @@ import com.tagasay.app.data.model.VaultData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -26,8 +30,14 @@ class AppRepository(private val store: VaultStore) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val _vault = MutableStateFlow(store.load() ?: SampleData.vault())
+    private val initialVault = store.load()
+        ?: if (BuildConfig.DEBUG) SampleData.vault() else VaultData()
+    private val _vault = MutableStateFlow(initialVault)
     val vault: StateFlow<VaultData> = _vault.asStateFlow()
+
+    /** Новые входящие сообщения — для уведомлений фонового сервиса. */
+    private val _incoming = MutableSharedFlow<Message>(extraBufferCapacity = 64)
+    val incoming: SharedFlow<Message> = _incoming.asSharedFlow()
 
     init {
         if (!store.exists()) persist(_vault.value)
@@ -225,6 +235,7 @@ class AppRepository(private val store: VaultStore) {
                 messages = data.messages + (chatId to (data.messages[chatId].orEmpty() + message)),
             )
         }
+        _incoming.tryEmit(message)
     }
 
     fun markRead(chatId: String) {
@@ -432,6 +443,7 @@ class AppRepository(private val store: VaultStore) {
     }
 
     fun resetToDemo() {
+        if (!BuildConfig.DEBUG) return
         val demo = SampleData.vault()
         _vault.value = demo
         persist(demo)

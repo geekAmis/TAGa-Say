@@ -15,7 +15,6 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
@@ -41,14 +40,10 @@ fun Application.module(
         )
     }
     install(CallLogging) {
-        level = Level.INFO
-    }
-    install(CORS) {
-        anyHost()
-        allowHeader("Authorization")
-        allowHeader("X-TAGa-Say-Signature")
-        allowHeader("X-TAGa-Say-Timestamp")
-        allowHeader("X-TAGa-Say-Nonce")
+        // Не логируем пути: в них бывают @username и id медиа. Только ошибки.
+        level = Level.WARN
+        filter { call -> (call.response.status()?.value ?: 0) >= 400 }
+        format { call -> "${call.request.local.method.value} -> ${call.response.status()?.value ?: 0}" }
     }
     install(StatusPages) {
         exception<Throwable> { call, cause ->

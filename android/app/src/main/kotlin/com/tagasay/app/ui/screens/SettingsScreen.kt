@@ -378,25 +378,27 @@ fun SettingsScreen(
             modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
         )
         SectionCard {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { confirmReset = true }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, tint = TagaAmber)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Сбросить демо-данные", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Вернуть исходные чаты и сообщения",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            if (BuildConfig.DEBUG) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { confirmReset = true }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = TagaAmber)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Сбросить демо-данные", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Вернуть исходные чаты и сообщения",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

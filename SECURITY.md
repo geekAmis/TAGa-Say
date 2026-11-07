@@ -39,4 +39,21 @@ TAGa-Say does not implement its own primitives. It relies on:
 
 ## Supported versions
 
-Only the latest release receives security fixes during alpha.
+Only the latest release receives security fixes during the 1.x line.
+
+## Release 1.0.0 — security status
+
+1.0.0 is a **release candidate for closed deployments**, not a claim of
+government-grade certification. Before handling data that can endanger people:
+
+- commission an independent cryptographic audit and penetration test;
+- review the threat model with your security service;
+- deploy the relay in an isolated segment, with your own domain and certificate;
+- disable Google services on devices where required by policy;
+- verify the absence of `prompt.txt`, signing keys and `.env` in the build.
+
+Known limitations: no sealed sender, no WebSocket delivery, no multi-device,
+no audited group/call protocols (UI scaffolding only), and the relay still uses
+a JSON snapshot instead of PostgreSQL/Redis. See `docs/release.md` for the full
+checklist.
+

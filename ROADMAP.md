@@ -5,6 +5,21 @@
 
 ---
 
+## Release 1.0.0 (release candidate)
+
+- [x] E2EE 1:1: X3DH + Double Ratchet + PQXDH.
+- [x] Шифрованные вложения и клиентский антивирус.
+- [x] `WireMessage`: edit/delete/forward/reply, delivered/read.
+- [x] Паддинг классов размера (`TGF1`).
+- [x] Фоновый приём и уведомления без Google/FCM.
+- [x] Rate limits, квоты mailbox, логи без метаданных.
+- [x] Release workflow, подпись, CHANGELOG, `docs/release.md`.
+- [ ] Внешний аудит криптографии и пентест.
+- [ ] PostgreSQL/Redis, бэкапы, мониторинг, geo-IP.
+- [ ] Группы, каналы, звонки, мультиустройство, sealed sender.
+
+---
+
 ## Фаза 0. Фундамент (неделя 1)
 
 - [x] Создан репозиторий и базовая документация (README, ROADMAP, LICENSE, PRIVACY, SECURITY).
@@ -104,10 +119,11 @@
 
 ## Фаза 7. Релиз
 
-- [ ] Google Play (AAB) + прямая APK-сборка.
-- [ ] Онбординг, справка, локализация (ru/en).
+- [ ] Google Play (AAB).
+- [x] Прямая APK/AAB-сборка, подпись и GitHub Release workflow.
+- [x] Онбординг и справка (ru); локализация en — позже.
 - [ ] Мониторинг сервера, бэкапы, disaster recovery.
-- [ ] Публичная документация и страница загрузки.
+- [x] Документация и release-чеклист; страница загрузки — позже.
 
 ---
 
