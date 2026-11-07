@@ -136,16 +136,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         totpCode: String,
     ) {
         viewModelScope.launch {
+            val serverUrl = settingsStore.settings.first().serverUrl
+            // Verifier сохраняется до onboarded=true, чтобы фоновый sync не
+            // опередил онбординг и не упал с «Password is required».
+            withContext(Dispatchers.IO) {
+                runCatching { container.accountManager.rememberPassword(serverUrl, username, password) }
+                    .onFailure { Log.w("TAGaSync", "rememberPassword failed", it) }
+            }
             settingsStore.completeOnboarding(displayName, username)
             repository.updateProfile(displayName, username, "", repository.vault.value.profile.bio)
-            val settings = settingsStore.settings.first()
             withContext(Dispatchers.IO) {
                 runCatching {
                     container.accountManager.ensureRegistered(
-                        serverUrl = settings.serverUrl,
+                        serverUrl = serverUrl,
                         username = username,
                         displayName = displayName,
-                        password = password,
                         totpCode = totpCode,
                     )
                 }

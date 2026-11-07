@@ -78,6 +78,18 @@ class AccountManager(
                 username.trimStart('@').lowercase().toByteArray(),
         )
 
+    /**
+     * Сохраняет Argon2id-verifier до переключения UI на основной экран.
+     * Иначе фоновый sync может стартовать раньше и упасть с
+     * «Password is required for this account» на первом запуске.
+     */
+    fun rememberPassword(serverUrl: String, username: String, password: String) {
+        if (password.isBlank()) return
+        val normalizedUrl = serverUrl.trim().trimEnd('/')
+        val cleanUsername = username.trimStart('@').lowercase()
+        rememberPending(normalizedUrl, cleanUsername, passwordVerifier(cleanUsername, password))
+    }
+
     private fun pendingVerifierKey(serverUrl: String, username: String) =
         "pending:${serverUrl.trimEnd('/')}:${username.trimStart('@').lowercase()}"
 
