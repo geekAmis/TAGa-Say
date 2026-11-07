@@ -1,5 +1,6 @@
 package com.tagasay.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,6 +58,9 @@ import com.tagasay.app.ui.theme.TagaPurpleDark
 @Composable
 fun OnboardingScreen(onComplete: (displayName: String, username: String, password: String, totpCode: String) -> Unit) {
     var step by remember { mutableIntStateOf(0) }
+    BackHandler {
+        if (step == 1) step = 0
+    }
 
     Box(
         modifier = Modifier

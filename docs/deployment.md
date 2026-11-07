@@ -23,7 +23,7 @@ tar -czf tagasay-server.tar.gz -C build/install tagasay-server
 scp tagasay-server.tar.gz root@83.141.92.137:/tmp/
 ssh root@83.141.92.137 '
   systemctl stop tagasay
-  rm -rf /opt/tagasay/*
+  # Не удаляйте /opt/tagasay/data — там аккаунты и очереди.
   tar -xzf /tmp/tagasay-server.tar.gz -C /opt/tagasay --strip-components=1
   chmod +x /opt/tagasay/bin/tagasay-server
   chown -R tagasay:tagasay /opt/tagasay
