@@ -4,12 +4,14 @@ import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import com.tagasay.app.data.AppRepository
+import com.tagasay.app.data.crypto.SealedSender
 import com.tagasay.app.data.model.Attachment
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.core.crypto.CryptoEngine
 import com.tagasay.core.crypto.MessageFraming
 import java.util.UUID
 
@@ -26,6 +28,8 @@ class ChatSync(
     private val messenger: CryptoMessenger,
     private val repository: AppRepository,
     private val mediaTransfer: MediaTransfer,
+    private val localUsername: String,
+    private val crypto: CryptoEngine,
 ) {
 
     // --------------------------------------------------------------- outgoing
@@ -201,27 +205,33 @@ class ChatSync(
         val delivered = linkedMapOf<String, MutableList<String>>()
 
         for (envelope in envelopes) {
+            val sender = resolveSender(envelope)
+            if (sender == null) {
+                Log.w("TAGaSync", "skip envelope ${envelope.id}: unreadable sealed sender")
+                ackIds += envelope.id
+                continue
+            }
             val payload = runCatching {
                 Base64.decode(envelope.ciphertext, Base64.NO_WRAP)
             }.getOrNull()
             if (payload != null) {
                 val plaintext = runCatching {
-                    messenger.decryptFrom(envelope.sender, payload)
+                    messenger.decryptFrom(sender, payload)
                 }.onFailure {
-                    Log.w("TAGaSync", "decrypt failed from ${envelope.sender}: ${it.message}", it)
+                    Log.w("TAGaSync", "decrypt failed from $sender: ${it.message}", it)
                 }.getOrNull()
                 if (plaintext != null) {
                     val wire = WireCodec.decode(plaintext)
                     if (wire != null) {
-                        val created = handleWire(envelope.sender, wire)
+                        val created = handleWire(sender, wire)
                         if (created) {
                             received++
                             if (wire.type == WireMessage.TYPE_TEXT || wire.type == WireMessage.TYPE_MEDIA) {
-                                delivered.getOrPut(envelope.sender) { mutableListOf() } += wire.id
+                                delivered.getOrPut(sender) { mutableListOf() } += wire.id
                             }
                         }
                     } else {
-                        receiveLegacy(envelope.sender, plaintext)
+                        receiveLegacy(sender, plaintext)
                         received++
                     }
                 }
@@ -338,14 +348,46 @@ class ChatSync(
 
     private suspend fun sendWireByPeer(peer: String, wire: WireMessage) {
         val ciphertext = messenger.encryptFor(peer, WireCodec.encode(wire))
+        // Sealed sender: relay не должен узнать, кто отправил конверт.
+        // Если запечатать не удалось — отправка падает, а не утекает username.
+        val sealed = SealedSender.seal(
+            recipientUsername = peer,
+            recipientIdentityKey = messenger.recipientIdentity(peer),
+            senderUsername = localUsername,
+            senderIdentityKey = messenger.identityPublicKey(),
+            crypto = crypto,
+        )
         api.sendEnvelope(
             SendEnvelopeRequest(
                 id = UUID.randomUUID().toString(),
                 recipient = peer,
                 ciphertext = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
                 sizeClass = MessageFraming.sizeClassFor(ciphertext.size),
+                sealedSender = sealed,
             ),
         )
+    }
+
+    /**
+     * Username отправителя: из sealed sender (предпочтительно) или из
+     * legacy-поля sender. null — конверт нельзя безопасно обработать.
+     */
+    private fun resolveSender(envelope: EnvelopeDto): String? {
+        if (envelope.sealedSender.isBlank()) {
+            return envelope.sender.takeIf { it.isNotBlank() }
+        }
+        val data = SealedSender.unseal(
+            recipientIdentityPrivateKey = messenger.identityPrivateKey(),
+            recipientUsername = localUsername,
+            sealedBase64 = envelope.sealedSender,
+            crypto = crypto,
+        ) ?: return null
+        val known = messenger.knownIdentity(data.username)
+        if (known != null && !known.contentEquals(data.identityKey)) {
+            Log.w("TAGaSync", "sealed sender identity changed for ${data.username}")
+            return null
+        }
+        return data.username
     }
 
     private fun parseKind(value: String): MessageKind =

@@ -52,8 +52,9 @@ government-grade certification. Before handling data that can endanger people:
 - disable Google services on devices where required by policy;
 - verify the absence of `prompt.txt`, signing keys and `.env` in the build.
 
-Known limitations: no sealed sender, no WebSocket delivery, no multi-device,
-no audited group/call protocols (UI scaffolding only), and the relay still uses
-a JSON snapshot instead of PostgreSQL/Redis. See `docs/release.md` for the full
-checklist.
+Known limitations: no WebSocket delivery, no multi-device, no audited
+group/call protocols (UI scaffolding only), and the relay still uses a JSON
+snapshot instead of PostgreSQL/Redis. **Sealed sender is implemented (1.0.1):
+the relay does not persist the sender username for sealed envelopes.** See
+`docs/release.md` for the full checklist.
 

@@ -13,6 +13,7 @@
 - [x] Паддинг классов размера (`TGF1`).
 - [x] Фоновый приём и уведомления без Google/FCM.
 - [x] Rate limits, квоты mailbox, логи без метаданных.
+- [x] Sealed sender (1.0.1): relay не хранит username отправителя.
 - [x] AEZA-мониторинг: оплачен до, баланс, стоимость, дефицит, донат.
 - [x] Release workflow, подпись, CHANGELOG, `docs/release.md`.
 - [x] GitHub Release `v1.0.0`: APK, AAB и серверный архив.
@@ -50,7 +51,7 @@
 
 - [x] Реализация X3DH + Double Ratchet + PQXDH на базе libsignal.
 - [x] Сервер: mailbox, очереди, ACK, offline-доставка (WebSocket — в работе).
-- [ ] Sealed sender: конверт без открытого идентификатора отправителя.
+- [x] Sealed sender: конверт без открытого идентификатора отправителя.
 - [x] Паддинг сообщений по классам размера (`TGF1` + length-prefix).
 - [ ] Локальное хранилище: SQLCipher, шифрование вложений, ключи в Keystore.
 - [x] Отправка/приём текста (E2EE проверен между Android и JVM-peer).

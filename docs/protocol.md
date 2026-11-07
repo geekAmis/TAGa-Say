@@ -34,8 +34,9 @@ message SealedEnvelope {
   uint32 size_class    = 4;  // 0..7, фиксированные классы размера
   uint64 created_at    = 5;
   uint64 expires_at    = 6;
-  bytes  sender_hint   = 7;  // опционально, зашифрован внутри
+  bytes  sealed_sender = 7;  // identity отправителя, зашифрованная на ключ получателя
   bytes  ack_token     = 8;  // для подтверждения доставки
+  string sender        = 9;  // legacy: открытый username (только старые клиенты)
 }
 ```
 
@@ -45,6 +46,24 @@ message SealedEnvelope {
   и padding до класса: 256 B, 1 KiB, 4 KiB, 16 KiB, 64 KiB, 256 KiB, 1 MiB.
   Relay видит только класс, а не точную длину. Старый сырой текст без заголовка
   принимается как есть (обратная совместимость).
+
+### Sealed sender
+
+Отправитель запечатывает `{username, identityKey}` на identity-ключ получателя:
+
+```
+ephemeral     = ECKeyPair.generate()
+shared        = ECDH(ephemeral.private, recipientIdentity)
+key           = HKDF-SHA256(shared, "", "taga/sealed/v1", 32)
+payload       = version || nameLen || username || identityKey || padding(96 B)
+sealed_sender = ephemeral.public || AES-256-GCM(key, payload, aad)
+aad           = "taga/sealed/v1|" || recipientUsername
+```
+
+Relay хранит только `sealed_sender`; поле `sender` пустое. Получатель
+распаковывает blob своим identity-ключом, сверяет identity с TOFU-store и
+только затем расшифровывает Double Ratchet. Старые клиенты без `sealed_sender`
+продолжают работать через открытое поле `sender`.
 
 ### MessageProto (WireMessage)
 

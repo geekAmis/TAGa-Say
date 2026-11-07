@@ -88,7 +88,7 @@ class SyncManager(
                 val api = TagaApi(session.serverUrl, session.accessToken)
                 val messenger = CryptoMessenger(signalStore, api)
                 val media = MediaTransfer(appContext, crypto, api)
-                val sync = ChatSync(api, messenger, repository, media)
+                val sync = ChatSync(api, messenger, repository, media, settings.username, crypto)
                 chatSync = sync
                 backoff = 2
                 while (currentCoroutineContext().isActive) {

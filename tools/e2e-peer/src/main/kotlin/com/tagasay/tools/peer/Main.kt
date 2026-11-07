@@ -19,6 +19,7 @@ import org.signal.libsignal.protocol.SessionCipher
 import org.signal.libsignal.protocol.SignalProtocolAddress
 import org.signal.libsignal.protocol.UsePqRatchet
 import org.signal.libsignal.protocol.ecc.ECKeyPair
+import org.signal.libsignal.protocol.ecc.ECPrivateKey
 import org.signal.libsignal.protocol.ecc.ECPublicKey
 import org.signal.libsignal.protocol.kem.KEMKeyPair
 import org.signal.libsignal.protocol.kem.KEMKeyType
@@ -33,6 +34,10 @@ import java.io.File
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.Mac
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import java.util.concurrent.TimeUnit
 import kotlin.system.exitProcess
 
@@ -87,14 +92,16 @@ private const val PEER_DEVICE_HASH = "peer-device-hash-0123456789abcdef012345678
     val sizeClass: Int = 0,
     val ttlSeconds: Long = 2_592_000,
     val ackToken: String = "",
+    val sealedSender: String = "",
 )
 @Serializable data class EnvelopeDto(
     val id: String,
-    val sender: String,
+    val sender: String = "",
     val ciphertext: String,
     val sizeClass: Int = 0,
     val createdAt: Long = 0,
     val expiresAt: Long = 0,
+    val sealedSender: String = "",
 )
 @Serializable data class AckRequest(val ids: List<String>)
 
@@ -159,6 +166,87 @@ object Framing {    private val MAGIC = byteArrayOf(0x54, 0x47, 0x46, 0x31) // "
             (framed[7].toInt() and 0xff)
         if (length < 0 || length > framed.size - 8) return framed
         return framed.copyOfRange(8, 8 + length)
+    }
+}
+
+/** Sealed sender: совпадает с android/app/.../SealedSender.kt. */
+object Seal {
+    private const val IDENTITY_BYTES = 33
+    private const val PAYLOAD_SIZE = 96
+    private val INFO = "taga/sealed/v1".toByteArray()
+
+    fun seal(
+        recipientUsername: String,
+        recipientIdentityKey: ByteArray,
+        senderUsername: String,
+        senderIdentityKey: ByteArray,
+    ): String {
+        val recipientName = recipientUsername.trimStart('@').lowercase()
+        val senderName = senderUsername.trimStart('@').lowercase()
+        val recipient = ECPublicKey(normalize(recipientIdentityKey))
+        val ephemeral = ECKeyPair.generate()
+        val shared = ephemeral.privateKey.calculateAgreement(recipient)
+        val key = hkdf(shared)
+        val name = senderName.toByteArray()
+        val payload = ByteArray(PAYLOAD_SIZE)
+        payload[0] = 1
+        payload[1] = name.size.toByte()
+        name.copyInto(payload, 2)
+        senderIdentityKey.copyInto(payload, 2 + name.size)
+        val aad = "taga/sealed/v1|$recipientName".toByteArray()
+        val encrypted = aesGcm(key, payload, aad)
+        return b64.encodeToString(ephemeral.publicKey.serialize() + encrypted)
+    }
+
+    fun unseal(
+        recipientPrivate: ECPrivateKey,
+        recipientUsername: String,
+        sealed: String,
+    ): Pair<String, ByteArray>? = runCatching {
+        val recipientName = recipientUsername.trimStart('@').lowercase()
+        val bytes = b64d.decode(sealed)
+        val ephemeral = ECPublicKey(bytes.copyOfRange(0, IDENTITY_BYTES))
+        val shared = recipientPrivate.calculateAgreement(ephemeral)
+        val key = hkdf(shared)
+        val aad = "taga/sealed/v1|$recipientName".toByteArray()
+        val payload = aesGcmDecrypt(key, bytes.copyOfRange(IDENTITY_BYTES, bytes.size), aad)
+        require(payload[0].toInt() == 1)
+        val nameLen = payload[1].toInt() and 0xff
+        val username = payload.copyOfRange(2, 2 + nameLen)
+            .decodeToString()
+            .trimStart('@')
+            .lowercase()
+        val identity = payload.copyOfRange(2 + nameLen, 2 + nameLen + IDENTITY_BYTES)
+        username to identity
+    }.getOrNull()
+
+    private fun normalize(key: ByteArray): ByteArray =
+        if (key.size == IDENTITY_BYTES) key else byteArrayOf(0x05) + key
+
+    private fun hkdf(ikm: ByteArray): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(ByteArray(32), "HmacSHA256"))
+        val prk = mac.doFinal(ikm)
+        mac.init(SecretKeySpec(prk, "HmacSHA256"))
+        mac.update(INFO)
+        mac.update(1)
+        return mac.doFinal().copyOf(32)
+    }
+
+    private fun aesGcm(key: ByteArray, plaintext: ByteArray, aad: ByteArray): ByteArray {
+        val nonce = ByteArray(12).also { SecureRandom().nextBytes(it) }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+        cipher.updateAAD(aad)
+        return nonce + cipher.doFinal(plaintext)
+    }
+
+    private fun aesGcmDecrypt(key: ByteArray, payload: ByteArray, aad: ByteArray): ByteArray {
+        val nonce = payload.copyOfRange(0, 12)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+        cipher.updateAAD(aad)
+        return cipher.doFinal(payload.copyOfRange(12, payload.size))
     }
 }
 
@@ -236,6 +324,7 @@ class Peer(private val server: String, private val username: String, private val
                 b64d.decode(it.signingPublic)
         }.getOrNull()
     } ?: generateSigningKey()
+    private val identityKeys = mutableMapOf<String, ByteArray>()
     private var token: String? = null
     @Volatile private var stopped = false
 
@@ -398,11 +487,21 @@ class Peer(private val server: String, private val username: String, private val
                 if (envelopes.isNotEmpty()) {
                     val ids = mutableListOf<String>()
                     for (envelope in envelopes) {
+                        val sender = if (envelope.sealedSender.isNotBlank()) {
+                            Seal.unseal(identity.privateKey, username, envelope.sealedSender)?.first
+                        } else {
+                            envelope.sender
+                        }
+                        if (sender.isNullOrBlank()) {
+                            println("sealed sender unreadable: ${envelope.id}")
+                            ids += envelope.id
+                            continue
+                        }
                         runCatching {
                             val payload = b64d.decode(envelope.ciphertext)
                             val type = payload[0].toInt()
                             val body = payload.copyOfRange(1, payload.size)
-                            val address = SignalProtocolAddress(envelope.sender, 1)
+                            val address = SignalProtocolAddress(sender, 1)
                             val cipher = SessionCipher(store, address)
                             val plain = Framing.unpad(
                                 when (type) {
@@ -414,9 +513,9 @@ class Peer(private val server: String, private val username: String, private val
                             if (wire != null) {
                                 when (wire.type) {
                                     "text", "media" -> {
-                                        println("[${envelope.sender}] ${wire.text}")
+                                        println("[$sender] ${wire.text}")
                                         sendWire(
-                                            envelope.sender,
+                                            sender,
                                             WireDto(
                                                 type = "delivered",
                                                 id = UUID.randomUUID().toString(),
@@ -424,7 +523,7 @@ class Peer(private val server: String, private val username: String, private val
                                             ),
                                         )
                                         System.getenv("PEER_AUTOREPLY")?.takeIf { it.isNotBlank() }?.let {
-                                            send(envelope.sender, "$it: ${wire.text}")
+                                            send(sender, "$it: ${wire.text}")
                                         }
                                     }
                                     "edit" -> println("[edit ${wire.id}] ${wire.text}")
@@ -435,9 +534,9 @@ class Peer(private val server: String, private val username: String, private val
                                 }
                             } else {
                                 val text = plain.decodeToString()
-                                println("[${envelope.sender}] $text")
+                                println("[$sender] $text")
                                 System.getenv("PEER_AUTOREPLY")?.takeIf { it.isNotBlank() }?.let {
-                                    send(envelope.sender, "$it: $text")
+                                    send(sender, "$it: $text")
                                 }
                             }
                         }.onFailure { println("decrypt failed: ${it.message}") }
@@ -474,14 +573,24 @@ class Peer(private val server: String, private val username: String, private val
             null,
         )
 
+    private fun recipientIdentity(target: String): ByteArray {
+        val clean = target.trimStart('@').lowercase()
+        return identityKeys.getOrPut(clean) {
+            val bundle = json.decodeFromString(KeyBundleDto.serializer(), get("/v1/keys/$clean"))
+            b64d.decode(bundle.identityKey)
+        }
+    }
+
     private fun sendPlain(target: String, plaintext: ByteArray, successLog: String?) {
         try {
-            val address = SignalProtocolAddress(target.trimStart('@'), 1)
+            val clean = target.trimStart('@').lowercase()
+            val address = SignalProtocolAddress(clean, 1)
             if (!store.containsSession(address)) {
                 val bundle = json.decodeFromString(
                     KeyBundleDto.serializer(),
-                    get("/v1/keys/${target.trimStart('@')}"),
+                    get("/v1/keys/$clean"),
                 )
+                identityKeys[clean] = b64d.decode(bundle.identityKey)
                 val preKey = PreKeyBundle(
                     bundle.registrationId,
                     bundle.deviceId,
@@ -499,10 +608,17 @@ class Peer(private val server: String, private val username: String, private val
             }
             val cipher = SessionCipher(store, address).encrypt(plaintext)
             val payload = byteArrayOf(cipher.type.toByte()) + cipher.serialize()
+            val sealed = Seal.seal(
+                recipientUsername = clean,
+                recipientIdentityKey = recipientIdentity(clean),
+                senderUsername = username,
+                senderIdentityKey = identity.publicKey.serialize(),
+            )
             val envelope = SendEnvelopeRequest(
                 id = UUID.randomUUID().toString(),
-                recipient = target.trimStart('@'),
+                recipient = clean,
                 ciphertext = b64.encodeToString(payload),
+                sealedSender = sealed,
             )
             post("/v1/envelope", json.encodeToString(envelope))
             if (successLog != null) println(successLog)

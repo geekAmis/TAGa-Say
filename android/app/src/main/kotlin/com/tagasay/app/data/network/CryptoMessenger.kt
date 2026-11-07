@@ -8,6 +8,7 @@ import org.signal.libsignal.protocol.SessionBuilder
 import org.signal.libsignal.protocol.SessionCipher
 import org.signal.libsignal.protocol.SignalProtocolAddress
 import org.signal.libsignal.protocol.UsePqRatchet
+import org.signal.libsignal.protocol.ecc.ECPrivateKey
 import org.signal.libsignal.protocol.ecc.ECPublicKey
 import org.signal.libsignal.protocol.kem.KEMPublicKey
 import org.signal.libsignal.protocol.message.PreKeySignalMessage
@@ -28,6 +29,28 @@ class CryptoMessenger(
     private val store: SignalStore,
     private val api: TagaApi,
 ) {
+
+    private val identityCache = mutableMapOf<String, ByteArray>()
+
+    fun identityPublicKey(): ByteArray = store.getIdentityKeyPair().publicKey.serialize()
+
+    fun identityPrivateKey(): ECPrivateKey = store.getIdentityKeyPair().privateKey
+
+    fun knownIdentity(username: String): ByteArray? =
+        store.getIdentity(address(username))?.serialize()
+
+    /** Identity-ключ получателя для sealed sender (кэшируется). */
+    suspend fun recipientIdentity(username: String): ByteArray {
+        val clean = username.trimStart('@').lowercase()
+        identityCache[clean]?.let { return it }
+        store.getIdentity(address(clean))?.let { known ->
+            return known.serialize().also { identityCache[clean] = it }
+        }
+        val bundle = api.keyBundle(clean)
+        val key = IdentityKey(Base64.decode(bundle.identityKey, Base64.NO_WRAP)).serialize()
+        identityCache[clean] = key
+        return key
+    }
 
     suspend fun encryptFor(username: String, plaintext: ByteArray): ByteArray {
         val address = address(username)
@@ -55,6 +78,8 @@ class CryptoMessenger(
 
     private suspend fun establishSession(username: String, address: SignalProtocolAddress) {
         val bundle = api.keyBundle(username)
+        val identity = IdentityKey(Base64.decode(bundle.identityKey, Base64.NO_WRAP))
+        identityCache[username.trimStart('@').lowercase()] = identity.serialize()
         val preKeyBundle = PreKeyBundle(
             bundle.registrationId,
             bundle.deviceId,
@@ -63,7 +88,7 @@ class CryptoMessenger(
             bundle.signedPrekeyId,
             ECPublicKey(Base64.decode(bundle.signedPrekey, Base64.NO_WRAP)),
             Base64.decode(bundle.signedPrekeySignature, Base64.NO_WRAP),
-            IdentityKey(Base64.decode(bundle.identityKey, Base64.NO_WRAP)),
+            identity,
             bundle.kyberPrekeyId,
             KEMPublicKey(Base64.decode(bundle.kyberPrekey, Base64.NO_WRAP)),
             Base64.decode(bundle.kyberPrekeySignature, Base64.NO_WRAP),

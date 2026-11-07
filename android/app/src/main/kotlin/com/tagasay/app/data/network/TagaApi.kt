@@ -75,17 +75,19 @@ data class SendEnvelopeRequest(
     val sizeClass: Int = 0,
     val ttlSeconds: Long = 30L * 24 * 60 * 60,
     val ackToken: String = "",
+    val sealedSender: String = "",
 )
 
 @Serializable
 data class EnvelopeDto(
     val id: String,
-    val sender: String,
+    val sender: String = "",
     val ciphertext: String,
     val sizeClass: Int = 0,
     val createdAt: Long = 0,
     val expiresAt: Long = 0,
     val ackToken: String = "",
+    val sealedSender: String = "",
 )
 
 @Serializable

@@ -37,6 +37,10 @@ fun Route.envelopeRoutes(store: InMemoryStore) {
             call.respond(HttpStatusCode.PayloadTooLarge, ErrorResponse("envelope too large", "PAYLOAD_TOO_LARGE"))
             return@post
         }
+        if (request.sealedSender.length > MAX_SEALED_SENDER_CHARS) {
+            call.respond(HttpStatusCode.PayloadTooLarge, ErrorResponse("sealed sender too large", "PAYLOAD_TOO_LARGE"))
+            return@post
+        }
         // MVP: адресация по @username или blinded delivery token. Позже — только token.
         val recipientToken = if (store.usernameByDeliveryToken(request.recipient) != null) {
             request.recipient
@@ -50,14 +54,17 @@ fun Route.envelopeRoutes(store: InMemoryStore) {
         }
 
         val now = System.currentTimeMillis()
+        val sealed = request.sealedSender.trim()
         val envelope = Envelope(
             id = request.id.ifBlank { UUID.randomUUID().toString() },
-            sender = authed.device.username,
+            // Sealed sender: relay не сохраняет username отправителя.
+            sender = if (sealed.isEmpty()) authed.device.username else "",
             ciphertext = request.ciphertext,
             sizeClass = request.sizeClass,
             createdAt = now,
             expiresAt = now + request.ttlSeconds.coerceIn(60, 30L * 24 * 60 * 60) * 1000,
             ackToken = request.ackToken,
+            sealedSender = sealed,
         )
         if (!store.putEnvelope(recipientToken, envelope)) {
             call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("mailbox full", "MAILBOX_FULL"))
@@ -92,3 +99,4 @@ fun Route.envelopeRoutes(store: InMemoryStore) {
 }
 
 private const val MAX_ENVELOPE_BYTES = 4 * 1024 * 1024
+private const val MAX_SEALED_SENDER_CHARS = 2048

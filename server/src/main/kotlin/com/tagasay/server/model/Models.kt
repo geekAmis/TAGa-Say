@@ -94,6 +94,7 @@ data class SendEnvelopeRequest(
     val sizeClass: Int,
     val ttlSeconds: Long = 30L * 24 * 60 * 60,
     val ackToken: String = "",
+    val sealedSender: String = "",
 )
 
 @Serializable
@@ -105,6 +106,7 @@ data class Envelope(
     val createdAt: Long,
     val expiresAt: Long,
     val ackToken: String = "",
+    val sealedSender: String = "",
 )
 
 @Serializable

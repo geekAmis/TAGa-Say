@@ -3,6 +3,21 @@
 Все заметные изменения проекта. Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.0.1] — 2026-11-08
+
+### Безопасность
+- **Sealed sender**: relay больше не сохраняет `@username` отправителя.
+  Identity отправителя и его username шифруются на identity-ключ получателя
+  (ECDH + HKDF-SHA256 + AES-256-GCM), AAD привязан к username получателя.
+- Проверка смены identity-ключа при распаковке sealed-конверта.
+- Legacy-конверты с открытым `sender` продолжают приниматься для совместимости.
+
+### Изменено
+- `versionCode 3`, версия `1.0.1`.
+- e2e-peer поддерживает sealed sender в обе стороны.
+
+[1.0.1]: https://github.com/geekAmis/TAGa-Say/releases/tag/v1.0.1
+
 ## [1.0.0] — 2026-11-07
 
 Первый релиз-кандидат для закрытого развёртывания.
