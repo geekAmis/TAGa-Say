@@ -13,11 +13,13 @@ import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
 import com.tagasay.app.data.model.ScanReport
+import com.tagasay.app.data.model.ServerInfo
 import com.tagasay.app.data.model.UiState
 import com.tagasay.app.data.network.TagaApi
 import com.tagasay.app.data.network.TwoFactorSetupResponse
 import com.tagasay.app.sync.SyncService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -40,18 +43,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val syncManager = container.syncManager
 
     private val fingerprint = kotlinx.coroutines.flow.MutableStateFlow("")
+    private val serverInfo = kotlinx.coroutines.flow.MutableStateFlow<ServerInfo?>(null)
 
     val uiState: StateFlow<UiState> = combine(
         repository.vault,
         settingsStore.settings,
         serverMonitor.status,
         fingerprint,
-    ) { vault, settings, server, fp ->
+        serverInfo,
+    ) { vault, settings, server, fp, info ->
         UiState(
             loading = false,
             settings = settings,
             vault = vault,
             server = server,
+            serverInfo = info,
             fingerprint = fp,
         )
     }.stateIn(
@@ -81,6 +87,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (onboarded) SyncService.start(appContext) else SyncService.stop(appContext)
                 }
         }
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                refreshServerInfo()
+                delay(SERVER_INFO_INTERVAL_MS)
+            }
+        }
+    }
+
+    private suspend fun refreshServerInfo() {
+        val session = container.accountManager.currentSession() ?: return
+        runCatching { TagaApi(session.serverUrl, session.accessToken).serverInfo() }
+            .onSuccess { serverInfo.value = it }
+            .onFailure { Log.w("TAGaServer", "server info failed: ${it.message}") }
     }
 
     // ------------------------------------------------------------ onboarding
@@ -111,6 +130,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+            refreshServerInfo()
         }
     }
 
@@ -301,7 +321,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setNotifications(enabled: Boolean) = updateSettings { it.copy(notifications = enabled) }
     fun setShowTyping(enabled: Boolean) = updateSettings { it.copy(showTyping = enabled) }
     fun setScreenSecurity(enabled: Boolean) = updateSettings { it.copy(screenSecurity = enabled) }
-    fun setServerUrl(url: String) = updateSettings { it.copy(serverUrl = url.trim()) }
 
     fun updateProfile(displayName: String, username: String, phone: String, bio: String) {
         viewModelScope.launch {
@@ -313,6 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun checkServerNow() {
         viewModelScope.launch {
             serverMonitor.check(settingsStore.settingsValue().serverUrl)
+            refreshServerInfo()
         }
     }
 
@@ -340,3 +360,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 private suspend fun com.tagasay.app.data.local.SettingsStore.settingsValue(): AppSettings =
     settings.first()
+
+private const val SERVER_INFO_INTERVAL_MS = 10 * 60 * 1000L

@@ -28,6 +28,17 @@ class SettingsStore(private val context: Context) {
         val screenSecurity = booleanPreferencesKey("screen_security")
     }
 
+    /**
+     * Release-сборка всегда использует relay, заданный при сборке.
+     * Пользователь не может переключить сервер через настройки или DataStore.
+     */
+    private fun effectiveServerUrl(stored: String?): String =
+        if (BuildConfig.DEBUG) {
+            stored?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_SERVER_URL
+        } else {
+            BuildConfig.DEFAULT_SERVER_URL
+        }
+
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         AppSettings(
             onboarded = prefs[Keys.onboarded] ?: false,
@@ -38,7 +49,7 @@ class SettingsStore(private val context: Context) {
             readReceipts = prefs[Keys.readReceipts] ?: true,
             darkTheme = prefs[Keys.darkTheme] ?: true,
             notifications = prefs[Keys.notifications] ?: true,
-            serverUrl = prefs[Keys.serverUrl] ?: BuildConfig.DEFAULT_SERVER_URL,
+            serverUrl = effectiveServerUrl(prefs[Keys.serverUrl]),
             showTyping = prefs[Keys.showTyping] ?: true,
             screenSecurity = prefs[Keys.screenSecurity] ?: true,
         )
@@ -55,7 +66,7 @@ class SettingsStore(private val context: Context) {
                 readReceipts = prefs[Keys.readReceipts] ?: true,
                 darkTheme = prefs[Keys.darkTheme] ?: true,
                 notifications = prefs[Keys.notifications] ?: true,
-                serverUrl = prefs[Keys.serverUrl] ?: BuildConfig.DEFAULT_SERVER_URL,
+                serverUrl = effectiveServerUrl(prefs[Keys.serverUrl]),
                 showTyping = prefs[Keys.showTyping] ?: true,
                 screenSecurity = prefs[Keys.screenSecurity] ?: true,
             )
@@ -68,7 +79,7 @@ class SettingsStore(private val context: Context) {
             prefs[Keys.readReceipts] = next.readReceipts
             prefs[Keys.darkTheme] = next.darkTheme
             prefs[Keys.notifications] = next.notifications
-            prefs[Keys.serverUrl] = next.serverUrl
+            prefs[Keys.serverUrl] = effectiveServerUrl(next.serverUrl)
             prefs[Keys.showTyping] = next.showTyping
             prefs[Keys.screenSecurity] = next.screenSecurity
         }

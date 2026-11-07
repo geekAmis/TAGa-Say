@@ -44,7 +44,6 @@ import com.tagasay.app.BuildConfig
 import com.tagasay.app.ui.theme.TagaBlue
 import com.tagasay.app.ui.theme.TagaPurple
 import kotlinx.coroutines.delay
-import java.net.NetworkInterface
 import java.util.Locale
 
 /**
@@ -57,15 +56,14 @@ object ComplianceGuard {
 
     fun vpnActive(context: Context): Boolean {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)
-        if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return true
+        val active = manager.getNetworkCapabilities(manager.activeNetwork)
+        if (active?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return true
+        // Split tunneling / always-on VPN: проверяем все сети, а не имена
+        // интерфейсов — иначе системный tun0 оператора даёт ложное срабатывание.
         return runCatching {
-            NetworkInterface.getNetworkInterfaces().toList().any { iface ->
-                iface.isUp && (
-                    iface.name.startsWith("tun", true) ||
-                        iface.name.startsWith("ppp", true) ||
-                        iface.name.startsWith("utun", true)
-                    )
+            manager.allNetworks.any { network ->
+                manager.getNetworkCapabilities(network)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
             }
         }.getOrDefault(false)
     }

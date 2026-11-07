@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.tagasay"
-version = "0.1.0-alpha"
+version = "1.0.0"
 
 repositories {
     mavenCentral()

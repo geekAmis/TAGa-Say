@@ -1,5 +1,6 @@
 package com.tagasay.server.routes
 
+import com.tagasay.server.AezaStatus
 import com.tagasay.server.RateLimits
 import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.model.DiscoveryRequest
@@ -13,7 +14,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 
-fun Route.directoryRoutes(store: InMemoryStore) {
+fun Route.directoryRoutes(store: InMemoryStore, aeza: AezaStatus) {
     get("/v1/users/{username}") {
         if (!RateLimits.allow(call, "directory-user", limit = 60)) {
             call.respond(HttpStatusCode.TooManyRequests, ErrorResponse("rate limited", "RATE_LIMITED"))
@@ -72,5 +73,10 @@ fun Route.directoryRoutes(store: InMemoryStore) {
                 "salt" to com.tagasay.server.BuildInfo.SERVER_SALT,
             ),
         )
+    }
+
+    get("/v1/server/status") {
+        call.requireDevice(store) ?: return@get
+        call.respond(aeza.status())
     }
 }

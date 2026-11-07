@@ -152,10 +152,28 @@ data class ServerStatus(
     val version: String? = null,
 )
 
+/** Состояние сервера и личного кабинета AEZA (приходит с relay). */
+@Serializable
+data class ServerInfo(
+    val relayIp: String = "",
+    val paidUntil: String? = null,
+    val autoProlong: Boolean? = null,
+    val serviceStatus: String? = null,
+    val balance: String? = null,
+    val currency: String? = null,
+    val deletionAt: String? = null,
+    val deletionEstimated: Boolean = true,
+    val projectServers: Int = 0,
+    val aezaAvailable: Boolean = false,
+    val checkedAt: Long = 0,
+    val error: String? = null,
+)
+
 data class UiState(
     val loading: Boolean = true,
     val settings: AppSettings = AppSettings(),
     val vault: VaultData = VaultData(),
     val server: ServerStatus = ServerStatus(),
+    val serverInfo: ServerInfo? = null,
     val fingerprint: String = "",
 )

@@ -30,6 +30,7 @@ fun main() {
 fun Application.module(
     store: InMemoryStore = InMemoryStore(System.getenv("TAGASAY_DATA")),
     media: MediaStore = MediaStore(MediaStore.defaultRoot()),
+    aeza: AezaStatus = AezaStatus(),
 ) {
     install(ContentNegotiation) {
         json(
@@ -58,7 +59,7 @@ fun Application.module(
         healthRoutes()
         authRoutes(store)
         envelopeRoutes(store)
-        directoryRoutes(store)
+        directoryRoutes(store, aeza)
         mediaRoutes(store, media)
     }
 }

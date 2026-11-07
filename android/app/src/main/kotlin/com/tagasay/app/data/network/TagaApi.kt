@@ -1,5 +1,6 @@
 package com.tagasay.app.data.network
 
+import com.tagasay.app.data.model.ServerInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -188,6 +189,10 @@ class TagaApi(
 
     suspend fun twoFactorStatus(): TwoFactorStatusResponse =
         get("/v1/auth/2fa/status", TwoFactorStatusResponse.serializer())
+
+    /** Состояние relay и ЛК AEZA (проксируется сервером). */
+    suspend fun serverInfo(): ServerInfo =
+        get("/v1/server/status", ServerInfo.serializer())
 
     /**
      * Загружает ciphertext вложения. Сервер получает только шифротекст.

@@ -63,6 +63,7 @@ import com.tagasay.app.BuildConfig
 import kotlinx.coroutines.launch
 import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.ServerStatus
+import com.tagasay.app.data.model.ServerInfo
 import com.tagasay.app.data.model.UserProfile
 import com.tagasay.app.data.network.TwoFactorSetupResponse
 import com.tagasay.app.ui.components.Avatar
@@ -79,6 +80,7 @@ fun SettingsScreen(
     settings: AppSettings,
     profile: UserProfile,
     server: ServerStatus,
+    serverInfo: ServerInfo?,
     fingerprint: String,
     onSetup2fa: suspend () -> TwoFactorSetupResponse?,
     onEnable2fa: suspend (String) -> Boolean,
@@ -90,7 +92,6 @@ fun SettingsScreen(
     onNotifications: (Boolean) -> Unit,
     onShowTyping: (Boolean) -> Unit,
     onScreenSecurity: (Boolean) -> Unit,
-    onServerUrl: (String) -> Unit,
     onCheckServer: () -> Unit,
     onResetDemo: () -> Unit,
     onWipe: () -> Unit,
@@ -98,7 +99,6 @@ fun SettingsScreen(
     var editingProfile by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     var confirmWipe by remember { mutableStateOf(false) }
-    var serverUrl by remember(settings.serverUrl) { mutableStateOf(settings.serverUrl) }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     var twoFaEnabled by remember { mutableStateOf(false) }
@@ -342,26 +342,55 @@ fun SettingsScreen(
                     TextButton(onClick = onCheckServer) { Text("Проверить") }
                 }
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = { serverUrl = it.trim() },
-                    label = { Text("Адрес сервера") },
-                    placeholder = { Text("https://tagasay.app") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { onServerUrl(serverUrl) },
-                        enabled = serverUrl != settings.serverUrl,
-                    ) { Text("Сохранить") }
-                    TextButton(onClick = onCheckServer) { Text("Проверить сейчас") }
-                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(Modifier.height(10.dp))
+                ServerInfoRow("Адрес", settings.serverUrl)
                 Spacer(Modifier.height(6.dp))
+                if (serverInfo == null || !serverInfo.aezaAvailable) {
+                    Text(
+                        if (serverInfo == null) {
+                            "Данные хостинга загружаются…"
+                        } else {
+                            "Данные AEZA недоступны" +
+                                (serverInfo.error?.let { ": $it" } ?: "")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    ServerInfoRow("Оплачен до", formatHostDate(serverInfo.paidUntil))
+                    Spacer(Modifier.height(4.dp))
+                    ServerInfoRow("Баланс ЛК AEZA", formatBalance(serverInfo))
+                    Spacer(Modifier.height(4.dp))
+                    ServerInfoRow(
+                        "Удаление провайдером",
+                        (if (serverInfo.deletionEstimated) "≈ " else "") +
+                            formatHostDate(serverInfo.deletionAt),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    ServerInfoRow("Серверов с TAGa-Say", serverInfo.projectServers.toString())
+                    if (serverInfo.autoProlong == false) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Автопродление выключено — продлите сервер в ЛК AEZA.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TagaAmber,
+                        )
+                    }
+                    if (serverInfo.deletionEstimated) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Дата удаления — оценка (7 дней после оплаты); " +
+                                "точный срок уточняйте в ЛК AEZA.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    "При недоступности сервера в приложении показывается плашка с контактом " +
-                        "владельца: https://vk.ru/rf_dron",
+                    "Адрес сервера задан сборкой и не может быть изменён пользователем. " +
+                        "Ключ AEZA хранится только на relay.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
