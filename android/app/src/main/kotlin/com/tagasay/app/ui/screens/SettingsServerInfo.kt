@@ -8,7 +8,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.tagasay.app.data.model.ServerInfo
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -41,8 +40,18 @@ internal fun formatHostDate(iso: String?): String {
     }.getOrDefault(iso)
 }
 
-internal fun formatBalance(info: ServerInfo): String {
-    val amount = info.balance ?: return "—"
-    val currency = info.currency?.uppercase().orEmpty()
-    return if (currency.isBlank()) amount else "$amount $currency"
+internal fun formatMoney(amount: String?, currency: String?): String {
+    if (amount.isNullOrBlank()) return "—"
+    val cur = currency?.uppercase().orEmpty()
+    return if (cur.isBlank()) amount else "$amount $cur"
+}
+
+internal fun paymentTermLabel(term: String?): String = when (term) {
+    "month" -> "/мес"
+    "quarter_year" -> "/квартал"
+    "half_year" -> "/полгода"
+    "year" -> "/год"
+    "week" -> "/нед"
+    "day" -> "/день"
+    else -> ""
 }

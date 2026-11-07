@@ -23,7 +23,11 @@ data class ServerInfoResponse(
     val autoProlong: Boolean? = null,
     val serviceStatus: String? = null,
     val balance: String? = null,
+    val price: String? = null,
+    val shortfall: String? = null,
+    val paymentTerm: String? = null,
     val currency: String? = null,
+    val donateUrl: String? = null,
     val deletionAt: String? = null,
     val deletionEstimated: Boolean = true,
     val projectServers: Int = 0,
@@ -44,6 +48,9 @@ data class ServerInfoResponse(
 class AezaStatus(
     private val apiKey: String? = System.getenv("AEZA_API_KEY"),
     private val relayIp: String? = System.getenv("TAGASAY_PUBLIC_IP"),
+    private val donateUrl: String = System.getenv("TAGASAY_DONATE_URL")
+        ?.takeIf { it.isNotBlank() }
+        ?: "https://vk.ru/rf_dron",
     private val cacheTtlMs: Long = 10 * 60 * 1000L,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -83,7 +90,13 @@ class AezaStatus(
         val service = projectItems.firstOrNull()
 
         val account = get("/v2/accounts/me")
-        val balance = account["balance"]?.jsonPrimitive?.contentOrNull
+        val balanceCents = account["balance"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+        val priceCents = service?.get("price")?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+        val shortfallCents = if (balanceCents != null && priceCents != null) {
+            (priceCents - balanceCents).coerceAtLeast(0)
+        } else {
+            null
+        }
         val currency = account["currency"]?.jsonPrimitive?.contentOrNull
             ?: account["interface"]?.jsonObject?.get("currency")?.jsonPrimitive?.contentOrNull
         val expiresAt = service?.get("expiresAt")?.jsonPrimitive?.contentOrNull
@@ -95,8 +108,12 @@ class AezaStatus(
             autoProlong = service?.get("autoProlong")?.jsonPrimitive?.contentOrNull
                 ?.toBooleanStrictOrNull(),
             serviceStatus = service?.get("status")?.jsonPrimitive?.contentOrNull,
-            balance = balance,
+            balance = balanceCents?.let(::formatCents),
+            price = priceCents?.let(::formatCents),
+            shortfall = shortfallCents?.let(::formatCents),
+            paymentTerm = service?.get("paymentTerm")?.jsonPrimitive?.contentOrNull,
             currency = currency,
+            donateUrl = donateUrl,
             deletionAt = deletionAt,
             deletionEstimated = true,
             projectServers = projectItems.size,
@@ -123,10 +140,14 @@ class AezaStatus(
 
     private fun fallback(error: String): ServerInfoResponse = ServerInfoResponse(
         relayIp = relayIp.orEmpty(),
+        donateUrl = donateUrl,
         aezaAvailable = false,
         checkedAt = System.currentTimeMillis(),
         error = error,
     )
+
+    private fun formatCents(cents: Long): String =
+        String.format(java.util.Locale.US, "%.2f", cents / 100.0)
 
     private fun plusDays(iso: String, days: Long): String =
         Instant.parse(iso).plus(Duration.ofDays(days)).toString()

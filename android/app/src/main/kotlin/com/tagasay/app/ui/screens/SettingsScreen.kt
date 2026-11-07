@@ -1,5 +1,7 @@
 package com.tagasay.app.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,6 +103,7 @@ fun SettingsScreen(
     var confirmReset by remember { mutableStateOf(false) }
     var confirmWipe by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var twoFaEnabled by remember { mutableStateOf(false) }
     var twoFaSetup by remember { mutableStateOf<TwoFactorSetupResponse?>(null) }
@@ -360,7 +364,21 @@ fun SettingsScreen(
                 } else {
                     ServerInfoRow("Оплачен до", formatHostDate(serverInfo.paidUntil))
                     Spacer(Modifier.height(4.dp))
-                    ServerInfoRow("Баланс ЛК AEZA", formatBalance(serverInfo))
+                    ServerInfoRow(
+                        "Баланс ЛК AEZA",
+                        formatMoney(serverInfo.balance, serverInfo.currency),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    ServerInfoRow(
+                        "Стоимость сервера",
+                        formatMoney(serverInfo.price, serverInfo.currency) +
+                            paymentTermLabel(serverInfo.paymentTerm),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    ServerInfoRow(
+                        "Не хватает до продления",
+                        formatMoney(serverInfo.shortfall, serverInfo.currency),
+                    )
                     Spacer(Modifier.height(4.dp))
                     ServerInfoRow(
                         "Удаление провайдером",
@@ -369,31 +387,22 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     ServerInfoRow("Серверов с TAGa-Say", serverInfo.projectServers.toString())
-                    if (serverInfo.autoProlong == false) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Автопродление выключено — продлите сервер в ЛК AEZA.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TagaAmber,
-                        )
-                    }
-                    if (serverInfo.deletionEstimated) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Дата удаления — оценка (7 дней после оплаты); " +
-                                "точный срок уточняйте в ЛК AEZA.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            val url = serverInfo.donateUrl?.takeIf { it.isNotBlank() }
+                                ?: "https://vk.ru/rf_dron"
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(url)),
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Донат на сервер")
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Адрес сервера задан сборкой и не может быть изменён пользователем. " +
-                        "Ключ AEZA хранится только на relay.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 
