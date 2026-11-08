@@ -431,6 +431,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         SyncService.stop(appContext)
         syncManager.stop()
         repository.wipeAll()
+        container.accountManager.clear()
+        appContext.getSharedPreferences("taga_session", android.content.Context.MODE_PRIVATE)
+            .edit().clear().apply()
+        appContext.getSharedPreferences("taga_state_sync", android.content.Context.MODE_PRIVATE)
+            .edit().clear().apply()
+        appContext.getSharedPreferences("taga_update", android.content.Context.MODE_PRIVATE)
+            .edit().clear().apply()
+        listOf("stories", "media_cache", "updates").forEach { name ->
+            runCatching { java.io.File(appContext.filesDir, name).deleteRecursively() }
+        }
         container.deviceKeyStore.wipe()
         viewModelScope.launch {
             settingsStore.update { AppSettings() }

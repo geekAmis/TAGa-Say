@@ -83,4 +83,47 @@ class StateRoutesTest {
         val response = client.get("/v1/state")
         assertEquals(HttpStatusCode.Unauthorized, response.status)
     }
+
+    @Test
+    fun usersCannotReadEachOthersState() = testApplication {
+        val store = InMemoryStore()
+        fun device(id: String, username: String) = Device(
+            deviceId = id,
+            username = username,
+            identityKey = "identity",
+            signingKey = "signing",
+            passwordVerifier = "verifier",
+            deviceHash = "hash",
+            signedPrekey = "prekey",
+            signedPrekeySignature = "signature",
+            oneTimePrekeys = emptyList(),
+            createdAt = System.currentTimeMillis(),
+        )
+        val alice = runBlocking {
+            store.register(
+                device("alice-device", "alice"),
+                UserProfile("alice", "Alice", "identity"),
+                null,
+            ).first
+        }
+        val bob = runBlocking {
+            store.register(
+                device("bob-device", "bob"),
+                UserProfile("bob", "Bob", "identity"),
+                null,
+            ).first
+        }
+        application { module(store = store, updateStore = UpdateStore("missing", null, null)) }
+
+        client.put("/v1/state") {
+            header("Authorization", "Bearer $alice")
+            contentType(ContentType.Application.Json)
+            setBody("""{"ciphertext":"YWxpY2U="}""")
+        }
+        val bobState = client.get("/v1/state") {
+            header("Authorization", "Bearer $bob")
+        }
+        assertTrue(bobState.bodyAsText().contains("\"version\":0"))
+        assertTrue(!bobState.bodyAsText().contains("YWxpY2U="))
+    }
 }
