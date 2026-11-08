@@ -99,6 +99,7 @@ cd android
 - [Deployment](docs/deployment.md)
 - [Обновления](docs/updates.md)
 - [Синхронизация состояния](docs/sync.md)
+- [Решения (ADR)](docs/decisions.md)
 - [Release и чек-лист](docs/release.md)
 - [Changelog](CHANGELOG.md)
 
