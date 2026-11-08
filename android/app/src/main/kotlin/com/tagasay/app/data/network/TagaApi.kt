@@ -113,6 +113,19 @@ data class MediaUploadResponse(
 )
 
 @Serializable
+data class StateDto(
+    val version: Long = 0,
+    val ciphertext: String = "",
+    val updatedAt: Long = 0,
+)
+
+@Serializable
+data class ProfileUpdateRequest(
+    val displayName: String,
+    val bio: String,
+)
+
+@Serializable
 private data class ErrorDto(val error: String = "error", val code: String = "ERROR")
 
 class ApiException(val status: Int, message: String) : IOException(message)
@@ -206,6 +219,30 @@ class TagaApi(
     suspend fun twoFactorStatus(): TwoFactorStatusResponse =
         get("/v1/auth/2fa/status", TwoFactorStatusResponse.serializer())
 
+    /** Зашифрованное состояние пользователя (профиль, настройки, папки, истории). */
+    suspend fun getState(): StateDto = get("/v1/state", StateDto.serializer())
+
+    suspend fun putState(ciphertext: String, updatedAt: Long): StateDto =
+        put(
+            "/v1/state",
+            json.encodeToString(
+                StateDto.serializer(),
+                StateDto(ciphertext = ciphertext, updatedAt = updatedAt),
+            ),
+            StateDto.serializer(),
+        )
+
+    /** Обновляет публичное имя и «О себе» в directory. */
+    suspend fun updateProfile(displayName: String, bio: String) {
+        postUnit(
+            "/v1/profile",
+            json.encodeToString(
+                ProfileUpdateRequest.serializer(),
+                ProfileUpdateRequest(displayName, bio),
+            ),
+        )
+    }
+
     /** Состояние relay и ЛК AEZA (проксируется сервером). */
     suspend fun serverInfo(): ServerInfo =
         get("/v1/server/status", ServerInfo.serializer())
@@ -260,6 +297,16 @@ class TagaApi(
             val request = Request.Builder()
                 .url("$baseUrl$path")
                 .post(payload.toRequestBody(JSON_MEDIA))
+                .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
+                .build()
+            execute(request, serializer)
+        }
+
+    private suspend fun <T> put(path: String, payload: String, serializer: KSerializer<T>): T =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("$baseUrl$path")
+                .put(payload.toRequestBody(JSON_MEDIA))
                 .apply { if (token.isNotBlank()) header("Authorization", "Bearer $token") }
                 .build()
             execute(request, serializer)

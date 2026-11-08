@@ -10,6 +10,7 @@ import com.tagasay.app.data.model.Channel
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.Contact
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
@@ -601,6 +602,35 @@ class AppRepository(private val store: VaultStore) {
         }
     }
 
+    fun attachStoryMedia(
+        storyId: String,
+        mediaId: String,
+        keyBase64: String,
+        sha256: String,
+        mimeType: String,
+        sizeBytes: Long,
+        localUri: String?,
+    ) {
+        updateVault { data ->
+            data.copy(
+                stories = data.stories.map { story ->
+                    if (story.id != storyId) {
+                        story
+                    } else {
+                        story.copy(
+                            mediaId = mediaId,
+                            keyBase64 = keyBase64,
+                            sha256 = sha256,
+                            mimeType = mimeType,
+                            sizeBytes = sizeBytes,
+                            localUri = localUri ?: story.localUri,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
     fun deleteStory(storyId: String) {
         updateVault { data ->
             val target = data.stories.firstOrNull { it.id == storyId }
@@ -706,6 +736,57 @@ class AppRepository(private val store: VaultStore) {
                     bio = bio,
                     avatarColor = it.profile.avatarColor,
                 ),
+            )
+        }
+    }
+
+    /**
+     * Применяет состояние, полученное с relay. Личные сообщения остаются
+     * локальными; синхронизируются профиль, оформление, папки, стикеры,
+     * звонки, контакты, каналы и истории.
+     */
+    fun applySyncedState(
+        profile: UserProfile?,
+        folders: List<ChatFolder>,
+        stickerPacks: List<StickerPack>,
+        stickerFavorites: List<String>,
+        callLog: List<CallEntry>,
+        contacts: List<Contact>,
+        channels: List<Channel>,
+        stories: List<Story>,
+    ) {
+        updateVault { data ->
+            val mergedStories = stories.map { remote ->
+                val local = data.stories.firstOrNull { it.id == remote.id }
+                // content:// URI с другого устройства недоступен; оставляем свой.
+                remote.copy(localUri = local?.localUri)
+            }
+            val knownChats = data.chats.map { it.id }.toSet()
+            val channelChats = channels
+                .filterNot { it.id in knownChats }
+                .map { channel ->
+                    Chat(
+                        id = channel.id,
+                        title = channel.title,
+                        username = channel.username,
+                        type = ChatType.CHANNEL,
+                        avatarColor = channel.avatarColor,
+                        verified = channel.verified,
+                        lastMessage = channel.description.ifBlank { "Канал" },
+                        lastTimestamp = System.currentTimeMillis(),
+                        description = channel.description,
+                    )
+                }
+            data.copy(
+                profile = profile ?: data.profile,
+                chatFolders = folders,
+                stickerPacks = stickerPacks,
+                stickerFavorites = stickerFavorites,
+                callLog = callLog,
+                contacts = contacts,
+                channels = channels,
+                stories = mergedStories,
+                chats = data.chats + channelChats,
             )
         }
     }

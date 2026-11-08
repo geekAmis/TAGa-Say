@@ -9,6 +9,8 @@ import com.tagasay.app.data.local.DeviceKeyStore
 import com.tagasay.app.data.local.SettingsStore
 import com.tagasay.app.data.local.VaultStore
 import com.tagasay.app.data.network.AccountManager
+import com.tagasay.app.data.network.StateSync
+import com.tagasay.app.data.network.StoryTransfer
 import com.tagasay.app.data.update.UpdateManager
 import com.tagasay.app.security.FileInspector
 import com.tagasay.core.crypto.CryptoEngine
@@ -32,7 +34,19 @@ class AppContainer(context: Context) {
     val accountManager: AccountManager by lazy {
         AccountManager(appContext, deviceKeyStore, signalStore, crypto)
     }
+    val stateSync: StateSync by lazy {
+        StateSync(appContext, repository, settingsStore, crypto, storyTransfer)
+    }
+    val storyTransfer: StoryTransfer by lazy { StoryTransfer(appContext, crypto) }
     val syncManager: SyncManager by lazy {
-        SyncManager(appContext, repository, settingsStore, accountManager, signalStore, crypto)
+        SyncManager(
+            appContext,
+            repository,
+            settingsStore,
+            accountManager,
+            signalStore,
+            crypto,
+            stateSync,
+        )
     }
 }

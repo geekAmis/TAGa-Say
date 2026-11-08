@@ -7,7 +7,7 @@ TAGa-Say — закрытая система обмена сообщениями
 не покидают телефон в открытом виде, а сервер выступает только как «слепой» ретранслятор
 зашифрованных конвертов.
 
-> Статус: release candidate **1.1.0** для закрытого контура. Работает: Compose-UI,
+> Статус: release candidate **1.2.0** для закрытого контура. Работает: Compose-UI,
 > зашифрованный локальный vault, сервер-ретранслятор, **E2EE-текст через libsignal
 > (X3DH + Double Ratchet + PQXDH)**, **шифрованные вложения**, **sealed sender**
 > (relay не хранит отправителя), редактирование, удаление, пересылка и ответы,
@@ -98,6 +98,7 @@ cd android
 - [Разбор референсов](docs/reference-notes.md)
 - [Deployment](docs/deployment.md)
 - [Обновления](docs/updates.md)
+- [Синхронизация состояния](docs/sync.md)
 - [Release и чек-лист](docs/release.md)
 - [Changelog](CHANGELOG.md)
 

@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
@@ -310,7 +311,7 @@ private fun ChatRow(chat: Chat, folders: List<ChatFolder>, onClick: () -> Unit) 
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f),
                 )
                 if (chat.type == ChatType.CHANNEL) {
                     Spacer(Modifier.width(6.dp))
@@ -325,21 +326,19 @@ private fun ChatRow(chat: Chat, folders: List<ChatFolder>, onClick: () -> Unit) 
                     )
                 }
                 if (folderTag != null) {
-                    Spacer(Modifier.width(5.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        listOf(folderTag.emoji, folderTag.title)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" "),
+                        folderTag.emoji.ifBlank { "•" },
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 10.sp,
                         maxLines = 1,
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
                     )
                 }
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     text = formatChatTime(chat.lastTimestamp),
                     style = MaterialTheme.typography.bodySmall,

@@ -105,4 +105,22 @@ class SettingsStore(private val context: Context) {
     suspend fun setServerUrl(url: String) = update { it.copy(serverUrl = url) }
     suspend fun setProfile(displayName: String, username: String, phone: String, bio: String) =
         update { it.copy(displayName = displayName, username = username.trimStart('@'), phone = phone) }
+
+    /** Применяет настройки, пришедшие с relay. Аккаунт и сервер не меняются. */
+    suspend fun applySynced(next: AppSettings) = update { current ->
+        current.copy(
+            displayName = next.displayName.ifBlank { current.displayName },
+            phone = next.phone,
+            phoneDiscoverable = next.phoneDiscoverable,
+            readReceipts = next.readReceipts,
+            darkTheme = next.darkTheme,
+            notifications = next.notifications,
+            showTyping = next.showTyping,
+            screenSecurity = next.screenSecurity,
+            messageTextSize = next.messageTextSize,
+            bubbleRadius = next.bubbleRadius,
+            chatTheme = next.chatTheme,
+            chatWallpaper = next.chatWallpaper,
+        )
+    }
 }

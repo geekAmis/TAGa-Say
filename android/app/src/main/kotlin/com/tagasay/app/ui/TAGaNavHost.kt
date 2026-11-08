@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -173,7 +174,15 @@ private fun MainNavHost(
                                     Icon(tab.icon, contentDescription = tab.label)
                                 }
                             },
-                            label = { Text(tab.label) },
+                            label = {
+                                Text(
+                                    tab.label,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    fontSize = 10.sp,
+                                )
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = TagaPurple,
                                 selectedTextColor = TagaPurple,

@@ -3,6 +3,7 @@ package com.tagasay.server.data
 import com.tagasay.server.model.Device
 import com.tagasay.server.model.Envelope
 import com.tagasay.server.model.UserProfile
+import com.tagasay.server.model.UserState
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -29,6 +30,7 @@ class InMemoryStore(private val persistPath: String? = null) {
     private val mailboxes = ConcurrentHashMap<String, MutableList<Envelope>>()
     private val users = ConcurrentHashMap<String, UserProfile>()
     private val phoneHashes = ConcurrentHashMap<String, String>() // hash -> username
+    private val states = ConcurrentHashMap<String, UserState>() // username -> encrypted state
 
     init {
         load()
@@ -120,6 +122,34 @@ class InMemoryStore(private val persistPath: String? = null) {
 
     fun deleteDeliveryToken(token: String): String? = deliveryTokens.remove(token)
 
+    fun state(username: String): UserState? = states[username.lowercase()]
+
+    suspend fun putState(username: String, ciphertext: String, updatedAt: Long): UserState =
+        mutex.withLock {
+            val key = username.lowercase()
+            val next = UserState(
+                version = (states[key]?.version ?: 0) + 1,
+                ciphertext = ciphertext,
+                updatedAt = if (updatedAt > 0) updatedAt else System.currentTimeMillis(),
+            )
+            states[key] = next
+            persist()
+            next
+        }
+
+    suspend fun updateUserProfile(username: String, displayName: String, bio: String): UserProfile? =
+        mutex.withLock {
+            val key = username.lowercase()
+            val current = users[key] ?: return@withLock null
+            val next = current.copy(
+                displayName = displayName.take(64).ifBlank { current.displayName },
+                bio = bio.take(300),
+            )
+            users[key] = next
+            persist()
+            next
+        }
+
     fun rotateDeliveryToken(deviceId: String): String? {
         val old = deliveryTokens.entries.firstOrNull { it.value == deviceId }?.key ?: return null
         deliveryTokens.remove(old)
@@ -142,6 +172,7 @@ class InMemoryStore(private val persistPath: String? = null) {
             snapshot.tokens.forEach { (token, device) -> tokens[token] = device }
             snapshot.deliveryTokens.forEach { (token, device) -> deliveryTokens[token] = device }
             snapshot.mailboxes.forEach { (token, list) -> mailboxes[token] = list.toMutableList() }
+            snapshot.states.forEach { (username, state) -> states[username] = state }
         }
     }
 
@@ -156,6 +187,7 @@ class InMemoryStore(private val persistPath: String? = null) {
                 tokens = tokens.toMap(),
                 deliveryTokens = deliveryTokens.toMap(),
                 mailboxes = mailboxes.mapValues { it.value.toList() },
+                states = states.toMap(),
             )
             val temp = File(file.parentFile, "${file.name}.tmp")
             temp.writeText(json.encodeToString(Snapshot.serializer(), snapshot))
@@ -179,6 +211,7 @@ class InMemoryStore(private val persistPath: String? = null) {
         val tokens: Map<String, String> = emptyMap(),
         val deliveryTokens: Map<String, String> = emptyMap(),
         val mailboxes: Map<String, List<Envelope>> = emptyMap(),
+        val states: Map<String, UserState> = emptyMap(),
     )
 
     private fun randomToken(): String {

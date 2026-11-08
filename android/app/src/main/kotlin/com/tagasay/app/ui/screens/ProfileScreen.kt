@@ -185,28 +185,40 @@ fun ProfileScreen(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 4.dp,
+                                vertical = 8.dp,
+                            ),
                         ) {
                             Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Фото")
+                            Spacer(Modifier.width(4.dp))
+                            Text("Фото", fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
                         OutlinedButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 4.dp,
+                                vertical = 8.dp,
+                            ),
                         ) {
                             Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Изменить")
+                            Spacer(Modifier.width(4.dp))
+                            Text("Изменить", fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
                         OutlinedButton(
                             onClick = onOpenSettings,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(16.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 4.dp,
+                                vertical = 8.dp,
+                            ),
                         ) {
                             Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Настройки")
+                            Spacer(Modifier.width(4.dp))
+                            Text("Настройки", fontSize = 11.sp, maxLines = 1, softWrap = false)
                         }
                     } else {
                         Button(

@@ -414,6 +414,11 @@ private fun FolderDialog(
                 ) {
                     TypeChip("Личные", ChatType.PRIVATE, types) { types = it }
                     TypeChip("Группы", ChatType.GROUP, types) { types = it }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     TypeChip("Каналы", ChatType.CHANNEL, types) { types = it }
                     TypeChip("Избранное", ChatType.SAVED, types) { types = it }
                 }

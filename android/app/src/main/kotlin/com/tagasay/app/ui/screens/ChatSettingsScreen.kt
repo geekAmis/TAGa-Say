@@ -43,7 +43,7 @@ import com.tagasay.app.ui.theme.chatPalette
 private data class ChatThemeOption(val id: String, val label: String, val emoji: String)
 
 private val chatThemes = listOf(
-    ChatThemeOption("violet", "Фиолетовая", "💜"),
+    ChatThemeOption("violet", "Фиолет", "💜"),
     ChatThemeOption("green", "Зелёная", "🌿"),
     ChatThemeOption("blue", "Синяя", "🌊"),
     ChatThemeOption("sunset", "Закат", "🌅"),
@@ -221,7 +221,10 @@ fun ChatSettingsScreen(
                         Text(
                             option.label,
                             style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
                             maxLines = 1,
+                            softWrap = false,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

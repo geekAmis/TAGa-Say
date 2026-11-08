@@ -110,6 +110,8 @@ fun MediaGalleryScreen(
                     chatTitle,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     "Медиа и файлы",

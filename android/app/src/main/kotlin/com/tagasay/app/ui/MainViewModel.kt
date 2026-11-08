@@ -315,8 +315,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // -------------------------------------------------------------- stories
 
-    fun addStory(uri: Uri, caption: String) =
-        repository.addStory(uri.toString(), caption)
+    fun addStory(uri: Uri, caption: String) {
+        val story = repository.addStory(uri.toString(), caption) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = container.accountManager.currentSession() ?: return@launch
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching { container.storyTransfer.upload(api, uri) }
+                .onSuccess { prepared ->
+                    repository.attachStoryMedia(
+                        storyId = story.id,
+                        mediaId = prepared.mediaId,
+                        keyBase64 = prepared.keyBase64,
+                        sha256 = prepared.sha256,
+                        mimeType = prepared.mimeType,
+                        sizeBytes = prepared.sizeBytes,
+                        localUri = prepared.localUri,
+                    )
+                }
+                .onFailure { Log.w("TAGaStory", "story upload failed: ${it.message}") }
+        }
+    }
 
     fun markStoryViewed(storyId: String) = repository.markStoryViewed(storyId)
     fun deleteStory(storyId: String) = repository.deleteStory(storyId)
@@ -381,6 +399,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settingsStore.setProfile(displayName, username, phone, bio)
             repository.updateProfile(displayName, username, phone, bio)
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val session = container.accountManager.currentSession() ?: return@runCatching
+                    TagaApi(session.serverUrl, session.accessToken).updateProfile(displayName, bio)
+                }.onFailure { Log.w("TAGaProfile", "profile update failed: ${it.message}") }
+            }
         }
     }
 

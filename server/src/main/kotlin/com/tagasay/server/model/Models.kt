@@ -133,4 +133,12 @@ data class TwoFactorCodeRequest(val code: String)
 @Serializable
 data class TwoFactorStatusResponse(val enabled: Boolean)
 
+@Serializable
+data class UserState(
+    val version: Long = 0,
+    val ciphertext: String = "",
+    val updatedAt: Long = 0,
+)
+
+@Serializable
 data class AuthedDevice(val device: Device, val accessToken: String)

@@ -10,6 +10,7 @@ import com.tagasay.app.data.network.ApiException
 import com.tagasay.app.data.network.ChatSync
 import com.tagasay.app.data.network.CryptoMessenger
 import com.tagasay.app.data.network.MediaTransfer
+import com.tagasay.app.data.network.StateSync
 import com.tagasay.app.data.network.TagaApi
 import com.tagasay.core.crypto.CryptoEngine
 import kotlinx.coroutines.CancellationException
@@ -38,6 +39,7 @@ class SyncManager(
     private val accountManager: AccountManager,
     private val signalStore: SignalStore,
     private val crypto: CryptoEngine,
+    private val stateSync: StateSync,
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -91,8 +93,14 @@ class SyncManager(
                 val sync = ChatSync(api, messenger, repository, media, settings.username, crypto)
                 chatSync = sync
                 backoff = 2
+                stateSync.pullAndApply(api, session)
+                var ticks = 0
                 while (currentCoroutineContext().isActive) {
                     sync.poll()
+                    if (ticks % STATE_PUSH_EVERY_POLLS == 0) {
+                        stateSync.pushIfChanged(api, session)
+                    }
+                    ticks++
                     delay(POLL_INTERVAL_MS)
                 }
             } catch (cancelled: CancellationException) {
@@ -111,6 +119,7 @@ class SyncManager(
 
     private companion object {
         const val POLL_INTERVAL_MS = 3_000L
+        const val STATE_PUSH_EVERY_POLLS = 5
         const val MAX_BACKOFF_SECONDS = 30L
     }
 }

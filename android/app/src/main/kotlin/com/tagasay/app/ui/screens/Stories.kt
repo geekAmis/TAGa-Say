@@ -129,7 +129,9 @@ fun StoriesRow(
                 Text(
                     "Моя история",
                     style = MaterialTheme.typography.bodySmall,
+                    fontSize = 9.sp,
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -152,7 +154,9 @@ fun StoriesRow(
                 Text(
                     story.authorName.substringBefore(' '),
                     style = MaterialTheme.typography.bodySmall,
+                    fontSize = 10.sp,
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -570,12 +574,26 @@ fun MyStoriesScreen(
             Tab(
                 selected = tab == 0,
                 onClick = { tab = 0 },
-                text = { Text("Опубликованные (${active.size})") },
+                text = {
+                    Text(
+                        "Опубликованные (${active.size})",
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                },
             )
             Tab(
                 selected = tab == 1,
                 onClick = { tab = 1 },
-                text = { Text("Архив (${archived.size})") },
+                text = {
+                    Text(
+                        "Архив (${archived.size})",
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                },
             )
         }
     }

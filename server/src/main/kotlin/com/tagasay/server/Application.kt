@@ -7,6 +7,8 @@ import com.tagasay.server.routes.directoryRoutes
 import com.tagasay.server.routes.envelopeRoutes
 import com.tagasay.server.routes.healthRoutes
 import com.tagasay.server.routes.mediaRoutes
+import com.tagasay.server.routes.profileRoutes
+import com.tagasay.server.routes.stateRoutes
 import com.tagasay.server.routes.versionRoutes
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -63,6 +65,8 @@ fun Application.module(
         envelopeRoutes(store)
         directoryRoutes(store, aeza)
         mediaRoutes(store, media)
+        profileRoutes(store)
+        stateRoutes(store)
         versionRoutes(updateStore)
     }
 }

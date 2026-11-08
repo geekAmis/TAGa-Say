@@ -170,6 +170,11 @@ data class Story(
     val viewed: Boolean = false,
     val mine: Boolean = false,
     val archived: Boolean = false,
+    val mediaId: String? = null,
+    val keyBase64: String? = null,
+    val sha256: String? = null,
+    val mimeType: String? = null,
+    val sizeBytes: Long = 0,
 ) {
     val expired: Boolean
         get() = !mine && System.currentTimeMillis() - createdAt > STORY_TTL_MS
