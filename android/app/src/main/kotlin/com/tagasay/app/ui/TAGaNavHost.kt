@@ -150,6 +150,7 @@ private fun MainNavHost(
 
     Scaffold(
         containerColor = androidx.compose.material3.MaterialTheme.colorScheme.background,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (currentRoute in topLevelRoutes) {
                 NavigationBar(

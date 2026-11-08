@@ -46,6 +46,7 @@ class StateSync(
     private val settingsStore: SettingsStore,
     private val crypto: CryptoEngine,
     private val storyTransfer: StoryTransfer,
+    private val deviceKeyStore: com.tagasay.app.data.local.DeviceKeyStore,
 ) {
     private val prefs = context.applicationContext
         .getSharedPreferences("taga_state_sync", Context.MODE_PRIVATE)
@@ -82,15 +83,20 @@ class StateSync(
         val state = buildState()
         val plaintext = json.encodeToString(SyncedState.serializer(), state).encodeToByteArray()
         val hash = crypto.sha256Hex(plaintext)
-        if (hash == prefs.getString(KEY_HASH, null)) return@runCatching false
+        if (hash == prefs.getString(KEY_HASH, null) &&
+            prefs.getString(KEY_FORMAT, null) == "v2"
+        ) {
+            return@runCatching false
+        }
         val ciphertext = Base64.getEncoder().encodeToString(
-            StateCrypto.encrypt(crypto, session.passwordVerifier, session.username, plaintext),
+            StateCrypto.encryptV2(crypto, masterKey(session), session.username, plaintext),
         )
         val saved = api.putState(ciphertext, state.updatedAt)
         prefs.edit()
             .putLong(KEY_VERSION, saved.version)
             .putLong(KEY_UPDATED_AT, state.updatedAt)
             .putString(KEY_HASH, hash)
+            .putString(KEY_FORMAT, "v2")
             .apply()
         Log.i(TAG, "state pushed: v${saved.version}")
         true
@@ -149,19 +155,33 @@ class StateSync(
 
     private fun decrypt(session: Session, ciphertext: String): SyncedState {
         val bytes = Base64.getDecoder().decode(ciphertext)
-        val plaintext = StateCrypto.decrypt(
-            crypto,
-            session.passwordVerifier,
-            session.username,
-            bytes,
-        )
+        val plaintext = runCatching {
+            StateCrypto.decryptV2(crypto, masterKey(session), session.username, bytes)
+        }.getOrElse {
+            // Состояние старого формата. Расшифровываем один раз и сразу
+            // перезаписываем сервер версией v2.
+            Log.w(TAG, "legacy state detected; migrating to v2")
+            prefs.edit().remove(KEY_FORMAT).apply()
+            StateCrypto.decryptLegacy(
+                crypto,
+                session.passwordVerifier,
+                session.username,
+                bytes,
+            )
+        }
         return json.decodeFromString(SyncedState.serializer(), plaintext.decodeToString())
     }
+
+    private fun masterKey(session: Session): ByteArray =
+        deviceKeyStore.accountMasterKey(
+            "${session.serverUrl.trimEnd('/')}|${session.username.lowercase()}",
+        )
 
     private companion object {
         const val TAG = "TAGaState"
         const val KEY_VERSION = "version"
         const val KEY_UPDATED_AT = "updated_at"
         const val KEY_HASH = "last_hash"
+        const val KEY_FORMAT = "format"
     }
 }

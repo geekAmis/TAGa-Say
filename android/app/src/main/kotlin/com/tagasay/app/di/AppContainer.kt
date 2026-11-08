@@ -35,7 +35,7 @@ class AppContainer(context: Context) {
         AccountManager(appContext, deviceKeyStore, signalStore, crypto)
     }
     val stateSync: StateSync by lazy {
-        StateSync(appContext, repository, settingsStore, crypto, storyTransfer)
+        StateSync(appContext, repository, settingsStore, crypto, storyTransfer, deviceKeyStore)
     }
     val storyTransfer: StoryTransfer by lazy { StoryTransfer(appContext, crypto) }
     val syncManager: SyncManager by lazy {

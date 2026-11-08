@@ -53,6 +53,22 @@ class DeviceKeyStore(
         return crypto.aesGcmDecrypt(masterKey(), sealed, aad.toByteArray())
     }
 
+    /**
+     * Случайный 256-битный AccountMasterKey. Хранится только в обёрнутом виде
+     * на аппаратном ключе Keystore и никогда не уходит на сервер.
+     */
+    fun accountMasterKey(accountId: String): ByteArray {
+        val key = "account_master:$accountId"
+        prefs.getString(key, null)?.let { stored ->
+            return decryptLocal(stored, ACCOUNT_MASTER_AAD)
+        }
+        val next = crypto.randomBytes(32)
+        prefs.edit()
+            .putString(key, encryptLocal(next, ACCOUNT_MASTER_AAD))
+            .apply()
+        return next
+    }
+
     fun ensureIdentity(): Identity {
         prefs.getString(KEY_IDENTITY_PUBLIC, null)?.let { pub ->
             val secret = prefs.getString(KEY_IDENTITY_SECRET, null) ?: return createIdentity()
@@ -133,6 +149,7 @@ class DeviceKeyStore(
         private const val KEY_DEVICE_SECRET = "device_secret_wrapped"
         private const val KEY_IDENTITY_PUBLIC = "identity_public"
         private const val KEY_IDENTITY_SECRET = "identity_secret_wrapped"
+        private const val ACCOUNT_MASTER_AAD = "taga/account/master/v1"
 
         /**
          * Постоянная соль сервера: domain separation, не секрет.
