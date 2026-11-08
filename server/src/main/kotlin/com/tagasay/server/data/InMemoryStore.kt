@@ -2,6 +2,7 @@ package com.tagasay.server.data
 
 import com.tagasay.server.model.Device
 import com.tagasay.server.model.Envelope
+import com.tagasay.server.model.Room
 import com.tagasay.server.model.UserProfile
 import com.tagasay.server.model.UserState
 import kotlinx.coroutines.sync.Mutex
@@ -31,6 +32,7 @@ class InMemoryStore(private val persistPath: String? = null) {
     private val users = ConcurrentHashMap<String, UserProfile>()
     private val phoneHashes = ConcurrentHashMap<String, String>() // hash -> username
     private val states = ConcurrentHashMap<String, UserState>() // username -> encrypted state
+    private val rooms = ConcurrentHashMap<String, Room>() // room id -> room
 
     init {
         load()
@@ -150,6 +152,117 @@ class InMemoryStore(private val persistPath: String? = null) {
             next
         }
 
+    // ---------------------------------------------------------------- rooms
+
+    fun room(id: String): Room? = rooms[id]
+
+    fun roomByUsername(username: String): Room? =
+        rooms.values.firstOrNull { it.username.equals(username.trimStart('@'), true) }
+
+    fun roomsFor(username: String): List<Room> {
+        val clean = username.lowercase()
+        return rooms.values
+            .filter { clean == it.owner.lowercase() || it.members.any { m -> m.equals(clean, true) } }
+            .sortedBy { it.createdAt }
+    }
+
+    fun searchRooms(username: String): List<Room> {
+        val clean = username.lowercase()
+        return rooms.values
+            .filter {
+                it.username.contains(clean, true) || it.title.contains(clean, true)
+            }
+            .sortedBy { it.createdAt }
+    }
+
+    suspend fun createRoom(room: Room): Room? = mutex.withLock {
+        if (roomByUsername(room.username) != null) return@withLock null
+        val cleanOwner = room.owner.lowercase()
+        val next = room.copy(
+            id = room.id.ifBlank { "room_${System.currentTimeMillis()}_${(0..999).random()}" },
+            username = room.username.trimStart('@').lowercase(),
+            owner = cleanOwner,
+            admins = room.admins.map { it.lowercase() }.distinct(),
+            members = (room.members + cleanOwner).map { it.lowercase().trimStart('@') }.distinct(),
+            createdAt = if (room.createdAt > 0) room.createdAt else System.currentTimeMillis(),
+        )
+        rooms[next.id] = next
+        persist()
+        next
+    }
+
+    suspend fun joinRoom(id: String, username: String): Room? = mutex.withLock {
+        val room = rooms[id] ?: return@withLock null
+        val clean = username.lowercase()
+        val next = room.copy(members = (room.members + clean).distinct())
+        rooms[id] = next
+        persist()
+        next
+    }
+
+    suspend fun leaveRoom(id: String, username: String): Room? = mutex.withLock {
+        val room = rooms[id] ?: return@withLock null
+        val clean = username.lowercase()
+        val members = room.members.filterNot { it.equals(clean, true) }
+        if (members.isEmpty()) {
+            rooms.remove(id)
+            persist()
+            return@withLock null
+        }
+        val next = room.copy(
+            members = members,
+            owner = if (room.owner.equals(clean, true)) members.first() else room.owner,
+            admins = room.admins.filterNot { it.equals(clean, true) },
+        )
+        rooms[id] = next
+        persist()
+        next
+    }
+
+    suspend fun changeRoomMember(
+        id: String,
+        actor: String,
+        target: String,
+        remove: Boolean,
+    ): Room? = mutex.withLock {
+        val room = rooms[id] ?: return@withLock null
+        val cleanActor = actor.lowercase()
+        val isAdmin = room.owner.equals(cleanActor, true) ||
+            room.admins.any { it.equals(cleanActor, true) }
+        if (!isAdmin) return@withLock null
+        val cleanTarget = target.trimStart('@').lowercase()
+        if (cleanTarget == room.owner.lowercase() && remove) return@withLock null
+        val members = if (remove) {
+            room.members.filterNot { it.equals(cleanTarget, true) }
+        } else {
+            (room.members + cleanTarget).distinct()
+        }
+        val next = room.copy(members = members)
+        rooms[id] = next
+        persist()
+        next
+    }
+
+    suspend fun updateRoom(
+        id: String,
+        actor: String,
+        title: String?,
+        description: String?,
+    ): Room? = mutex.withLock {
+        val room = rooms[id] ?: return@withLock null
+        val cleanActor = actor.lowercase()
+        val isAdmin = room.owner.equals(cleanActor, true) ||
+            room.admins.any { it.equals(cleanActor, true) }
+        if (!isAdmin) return@withLock null
+        val next = room.copy(
+            title = title?.take(80)?.ifBlank { room.title } ?: room.title,
+            description = description?.take(300) ?: room.description,
+        )
+        rooms[id] = next
+        persist()
+        next
+    }
+
     fun rotateDeliveryToken(deviceId: String): String? {
         val old = deliveryTokens.entries.firstOrNull { it.value == deviceId }?.key ?: return null
         deliveryTokens.remove(old)
@@ -173,6 +286,7 @@ class InMemoryStore(private val persistPath: String? = null) {
             snapshot.deliveryTokens.forEach { (token, device) -> deliveryTokens[token] = device }
             snapshot.mailboxes.forEach { (token, list) -> mailboxes[token] = list.toMutableList() }
             snapshot.states.forEach { (username, state) -> states[username] = state }
+            snapshot.rooms.forEach { room -> rooms[room.id] = room }
         }
     }
 
@@ -188,6 +302,7 @@ class InMemoryStore(private val persistPath: String? = null) {
                 deliveryTokens = deliveryTokens.toMap(),
                 mailboxes = mailboxes.mapValues { it.value.toList() },
                 states = states.toMap(),
+                rooms = rooms.values.toList(),
             )
             val temp = File(file.parentFile, "${file.name}.tmp")
             temp.writeText(json.encodeToString(Snapshot.serializer(), snapshot))
@@ -212,6 +327,7 @@ class InMemoryStore(private val persistPath: String? = null) {
         val deliveryTokens: Map<String, String> = emptyMap(),
         val mailboxes: Map<String, List<Envelope>> = emptyMap(),
         val states: Map<String, UserState> = emptyMap(),
+        val rooms: List<Room> = emptyList(),
     )
 
     private fun randomToken(): String {

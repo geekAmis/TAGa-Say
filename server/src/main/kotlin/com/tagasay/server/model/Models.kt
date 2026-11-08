@@ -141,4 +141,38 @@ data class UserState(
 )
 
 @Serializable
+data class Room(
+    val id: String,
+    val username: String,
+    val title: String,
+    val description: String = "",
+    val channel: Boolean = false,
+    val owner: String,
+    val admins: List<String> = emptyList(),
+    val members: List<String> = emptyList(),
+    val createdAt: Long = 0,
+)
+
+@Serializable
+data class CreateRoomRequest(
+    val title: String,
+    val username: String = "",
+    val description: String = "",
+    val channel: Boolean = false,
+    val members: List<String> = emptyList(),
+)
+
+@Serializable
+data class RoomMemberRequest(
+    val username: String,
+    val remove: Boolean = false,
+)
+
+@Serializable
+data class UpdateRoomRequest(
+    val title: String? = null,
+    val description: String? = null,
+)
+
+@Serializable
 data class AuthedDevice(val device: Device, val accessToken: String)
