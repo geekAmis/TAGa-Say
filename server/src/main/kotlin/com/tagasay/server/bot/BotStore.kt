@@ -275,8 +275,9 @@ class BotStore(private val root: File? = defaultRoot()) {
         val now = System.currentTimeMillis()
         val queue = updates[botId] ?: return@synchronized emptyList()
         queue.removeAll { it.expiresAt in 1..now }
+        val effectiveOffset = maxOf(offset, offsets[botId] ?: 0L)
         queue.asSequence()
-            .filter { it.updateId >= offset }
+            .filter { it.updateId >= effectiveOffset }
             .filter { allowed.isEmpty() || it.type in allowed }
             .take(limit)
             .toList()
