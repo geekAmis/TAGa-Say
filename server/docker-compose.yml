@@ -7,6 +7,9 @@ services:
     environment:
       TAGASAY_PORT: "8080"
       TAGASAY_DATA: "/data/store.json"
+      TAGASAY_BOT_DATA: "/data/bots"
+      TAGASAY_ENV: "production"
+      TAGASAY_BOT_TOKEN_KEY: "${TAGASAY_BOT_TOKEN_KEY:?TAGASAY_BOT_TOKEN_KEY is required in production}"
     volumes:
       - relaydata:/data
     depends_on:

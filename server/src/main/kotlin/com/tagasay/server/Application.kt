@@ -1,5 +1,12 @@
 package com.tagasay.server
 
+import com.tagasay.server.bot.BotAuth
+import com.tagasay.server.bot.BotSecrets
+import com.tagasay.server.bot.BotService
+import com.tagasay.server.bot.BotStore
+import com.tagasay.server.bot.BotUpdates
+import com.tagasay.server.bot.botRoutes
+import com.tagasay.server.bot.botUserRoutes
 import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.data.MediaStore
 import com.tagasay.server.routes.authRoutes
@@ -36,6 +43,8 @@ fun Application.module(
     media: MediaStore = MediaStore(MediaStore.defaultRoot()),
     aeza: AezaStatus = AezaStatus(),
     updateStore: UpdateStore = UpdateStore(),
+    botStore: BotStore = BotStore(),
+    botSecrets: BotSecrets = BotSecrets.fromEnv(),
 ) {
     install(ContentNegotiation) {
         json(
@@ -70,5 +79,12 @@ fun Application.module(
         roomRoutes(store)
         stateRoutes(store)
         versionRoutes(updateStore)
+
+        // Платформа ботов: отдельное хранилище, не смешивается с E2EE.
+        val botAuth = BotAuth(botStore, botSecrets)
+        val botUpdates = BotUpdates(botStore)
+        val botService = BotService(botStore, store, botAuth, botUpdates)
+        botRoutes(botAuth, botService, botUpdates)
+        botUserRoutes(store, botStore, botService, botUpdates, botAuth)
     }
 }

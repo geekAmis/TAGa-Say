@@ -1,0 +1,445 @@
+openapi: 3.0.3
+info:
+  title: TAGa-Say Bot API
+  version: 1.2.0
+  description: |
+    Bot API v1 для платформы ботов TAGa-Say (релиз 1.4.0, сервер 1.2.0).
+
+    Реализованы: getMe, getUpdates, sendMessage, editMessageText, deleteMessage,
+    getMyCommands, setMyCommands, deleteMyCommands, answerCallbackQuery.
+    Остальные методы возвращают 400 unsupported и помечены [~] в docs/bot-api.md.
+    Бот-чаты не E2EE; бот не получает ключи, state, контакты и историю.
+servers:
+  - url: https://relay.example/bot/v1
+    description: production (HTTPS only)
+  - url: http://localhost:8080/bot/v1
+    description: local debug
+security:
+  - botToken: []
+paths:
+  /getMe:
+    get:
+      summary: Информация о боте
+      operationId: getMe
+      responses:
+        '200':
+          $ref: '#/components/responses/BotResult'
+        '401':
+          $ref: '#/components/responses/BotError'
+    post:
+      summary: Информация о боте (POST-вариант)
+      operationId: getMePost
+      responses:
+        '200':
+          $ref: '#/components/responses/BotResult'
+        '401':
+          $ref: '#/components/responses/BotError'
+  /getUpdates:
+    get:
+      summary: Получить updates (long poll)
+      operationId: getUpdates
+      parameters:
+        - name: offset
+          in: query
+          schema: { type: integer, format: int64, default: 0 }
+          description: Подтверждает все update_id < offset.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        - name: timeout
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 50, default: 0 }
+        - name: allowed_updates
+          in: query
+          schema: { type: string }
+          example: message,callback_query
+      responses:
+        '200':
+          description: Массив updates (может быть пустым)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, result]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  result:
+                    type: array
+                    items: { $ref: '#/components/schemas/Update' }
+        '401': { $ref: '#/components/responses/BotError' }
+        '403': { $ref: '#/components/responses/BotError' }
+        '429': { $ref: '#/components/responses/BotError' }
+    post:
+      summary: Получить updates (query-параметры те же)
+      operationId: getUpdatesPost
+      responses:
+        '200':
+          description: Массив updates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result:
+                    type: array
+                    items: { $ref: '#/components/schemas/Update' }
+        '401': { $ref: '#/components/responses/BotError' }
+  /sendMessage:
+    post:
+      summary: Отправить текстовое сообщение
+      operationId: sendMessage
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessageRequest' }
+      responses:
+        '200':
+          description: Отправленное сообщение
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  result: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+        '403': { $ref: '#/components/responses/BotError' }
+        '404': { $ref: '#/components/responses/BotError' }
+        '429': { $ref: '#/components/responses/BotError' }
+  /editMessageText:
+    post:
+      summary: Редактировать сообщение бота
+      operationId: editMessageText
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditMessageTextRequest' }
+      responses:
+        '200':
+          description: Обновлённое сообщение
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+        '403': { $ref: '#/components/responses/BotError' }
+        '429': { $ref: '#/components/responses/BotError' }
+  /deleteMessage:
+    post:
+      summary: Удалить сообщение бота
+      operationId: deleteMessage
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chat_id, message_id]
+              properties:
+                chat_id: { type: string, example: 'u:alice' }
+                message_id: { type: string, example: 'm_1a2b3c' }
+      responses:
+        '200':
+          description: Удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { type: boolean, enum: [true] }
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+        '403': { $ref: '#/components/responses/BotError' }
+  /getMyCommands:
+    get:
+      summary: Список команд бота
+      operationId: getMyCommands
+      responses:
+        '200':
+          description: Массив команд
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result:
+                    type: array
+                    items: { $ref: '#/components/schemas/BotCommand' }
+        '401': { $ref: '#/components/responses/BotError' }
+    post:
+      summary: Список команд бота (POST-вариант)
+      operationId: getMyCommandsPost
+      responses:
+        '200':
+          description: Массив команд
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result:
+                    type: array
+                    items: { $ref: '#/components/schemas/BotCommand' }
+        '401': { $ref: '#/components/responses/BotError' }
+  /setMyCommands:
+    post:
+      summary: Заменить список команд
+      operationId: setMyCommands
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [commands]
+              properties:
+                commands:
+                  type: array
+                  maxItems: 100
+                  items: { $ref: '#/components/schemas/BotCommand' }
+                scope:
+                  description: '[~] принимается и игнорируется в 1.2.0'
+                  type: object
+                language_code:
+                  description: '[~] принимается и игнорируется в 1.2.0'
+                  type: string
+      responses:
+        '200':
+          description: Сохранённые команды
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result:
+                    type: array
+                    items: { $ref: '#/components/schemas/BotCommand' }
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+  /deleteMyCommands:
+    post:
+      summary: Очистить список команд
+      operationId: deleteMyCommands
+      responses:
+        '200':
+          description: Очищено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { type: boolean }
+        '401': { $ref: '#/components/responses/BotError' }
+  /answerCallbackQuery:
+    post:
+      summary: Ответить на нажатие inline-кнопки
+      operationId: answerCallbackQuery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [callback_query_id]
+              properties:
+                callback_query_id: { type: string, example: 'cq_1a2b3c' }
+                text: { type: string, maxLength: 200 }
+                show_alert: { type: boolean }
+                url: { type: string, description: '[~] принимается, не используется' }
+                cache_time: { type: integer, description: '[~] принимается, не используется' }
+      responses:
+        '200':
+          description: Ответ принят
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { type: boolean }
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+  /{method}:
+    post:
+      summary: Заглушка для нереализованных методов
+      description: |
+        Возвращает 400 unsupported для setWebhook, getFile, sendPhoto и др.
+        Полный список — docs/bot-api.md §6. Не имитирует работу.
+      operationId: unsupportedMethod
+      parameters:
+        - name: method
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+components:
+  securitySchemes:
+    botToken:
+      type: http
+      scheme: bearer
+      description: 'taga_bot_<numericId>.<base64url-secret>'
+  responses:
+    BotResult:
+      description: Успех
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok, result]
+            properties:
+              ok: { type: boolean, enum: [true] }
+              result: { type: object }
+    BotError:
+      description: Ошибка Bot API
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [ok, error_code, description]
+      properties:
+        ok: { type: boolean, enum: [false] }
+        error_code: { type: integer, example: 403 }
+        description: { type: string }
+        parameters:
+          type: object
+          properties:
+            retry_after: { type: integer }
+    BotCommand:
+      type: object
+      required: [command, description]
+      properties:
+        command: { type: string, pattern: '^[a-z0-9_]{1,32}$' }
+        description: { type: string, maxLength: 256 }
+    Chat:
+      type: object
+      required: [id, type]
+      properties:
+        id: { type: string, example: 'u:alice' }
+        type: { type: string, enum: [private, group, channel] }
+        title: { type: string, nullable: true }
+        username: { type: string, nullable: true }
+    User:
+      type: object
+      required: [id, is_bot]
+      properties:
+        id: { type: string, example: 'u:alice' }
+        username: { type: string }
+        display_name: { type: string }
+        is_bot: { type: boolean }
+    Entity:
+      type: object
+      required: [type, offset, length]
+      properties:
+        type:
+          type: string
+          enum: [bold, italic, underline, strikethrough, code, pre, text_link, text_mention, bot_command]
+        offset: { type: integer, description: UTF-16 offset }
+        length: { type: integer }
+        url: { type: string }
+    InlineKeyboardMarkup:
+      type: object
+      properties:
+        inline_keyboard:
+          type: array
+          items:
+            type: array
+            items:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 64 }
+                url: { type: string, description: 'http(s)' }
+                callback_data: { type: string, description: '1..64 bytes UTF-8' }
+                web_app:
+                  type: object
+                  description: '[~] только личный чат и домен бота'
+                  properties:
+                    url: { type: string }
+    Message:
+      type: object
+      required: [message_id, date, chat, from]
+      properties:
+        message_id: { type: string, example: 'm_1a2b3c4d5e' }
+        date: { type: integer, format: int64, description: unix seconds }
+        chat: { $ref: '#/components/schemas/Chat' }
+        from: { $ref: '#/components/schemas/User' }
+        text: { type: string, nullable: true }
+        entities:
+          type: array
+          items: { $ref: '#/components/schemas/Entity' }
+        reply_to_message_id: { type: string, nullable: true }
+        edit_date: { type: integer, format: int64, nullable: true }
+        reply_markup: { $ref: '#/components/schemas/InlineKeyboardMarkup' }
+    CallbackQuery:
+      type: object
+      required: [id, from, chat_instance, data]
+      properties:
+        id: { type: string }
+        from: { $ref: '#/components/schemas/User' }
+        chat_instance: { type: string }
+        data: { type: string, maxLength: 64 }
+        message: { $ref: '#/components/schemas/Message' }
+    Update:
+      type: object
+      required: [update_id]
+      properties:
+        update_id: { type: integer, format: int64 }
+        message: { $ref: '#/components/schemas/Message' }
+        callback_query: { $ref: '#/components/schemas/CallbackQuery' }
+    SendMessageRequest:
+      type: object
+      required: [chat_id, text]
+      properties:
+        chat_id: { type: string, example: 'u:alice' }
+        text: { type: string, maxLength: 4096 }
+        parse_mode: { type: string, enum: [HTML, MarkdownV2] }
+        disable_web_page_preview: { type: boolean }
+        reply_to_message_id: { type: string }
+        reply_markup: { $ref: '#/components/schemas/InlineKeyboardMarkup' }
+        entities:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/Entity' }
+        disable_notification: { type: boolean }
+    EditMessageTextRequest:
+      type: object
+      required: [chat_id, message_id, text]
+      properties:
+        chat_id: { type: string }
+        message_id: { type: string }
+        text: { type: string, maxLength: 4096 }
+        parse_mode: { type: string, enum: [HTML, MarkdownV2] }
+        reply_markup: { $ref: '#/components/schemas/InlineKeyboardMarkup' }
+        entities:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/Entity' }
