@@ -49,6 +49,10 @@ API-ключ AEZA, ключи подписи) в репозиторий не п�
     edit/delete/commands/callback), `/start`-gate, FSM BotFather, лимит 20,
     ретеншн; файлы/webhook/Web App/комнаты — `[~]`. Серверная часть в
     `feature/bots-1.4.0`, без деплоя до разрешения владельца.
+18. Боты 1.2.0, batch 2: `BotMediaStore` (файлы, TTL/квоты, MIME, подписанные
+    ссылки), webhook (HTTPS/SSRF/HMAC/ретраи/409), боты в комнатах
+    (`Room.bots`, `my_chat_member`, `channel_post`, privacy on/off),
+    обновлены docs/openapi. Тесты `server: test` — 42. Не задеплоено.
 
 ## Правила
 

@@ -42,6 +42,7 @@ Environment=TAGASAY_PORT=8080
 Environment=TAGASAY_DATA=/opt/tagasay/data/store.json
 Environment=TAGASAY_MEDIA=/opt/tagasay/data/media
 Environment=TAGASAY_BOT_DATA=/opt/tagasay/data/bots
+Environment=TAGASAY_PUBLIC_URL=https://83-141-92-137.nip.io
 Environment=TAGASAY_ENV=production
 EnvironmentFile=/etc/tagasay/bot.env
 ExecStart=/opt/tagasay/bin/tagasay-server
@@ -57,10 +58,12 @@ ReadWritePaths=/opt/tagasay
 `/opt/tagasay/data/media` (права `700`). Следующий шаг — PostgreSQL и Redis.
 
 Боты живут отдельно в `/opt/tagasay/data/bots` (`bots.json`,
-`bot-updates.jsonl`, `bot-chats.jsonl`, права `600`) и **не** переписывают
-пользовательский снапшот. Мастер-ключ токенов — `/etc/tagasay/bot.env`
+`bot-updates.jsonl`, `bot-chats.jsonl`, `bot-files/`, права `600`) и **не**
+переписывают пользовательский снапшот. Мастер-ключ токенов — `/etc/tagasay/bot.env`
 (`TAGASAY_BOT_TOKEN_KEY=...`, права `600`, не в git/бэкапе репозитория):
 `TAGASAY_ENV=production` без ключа останавливает старт сервера (fail-fast).
+`TAGASAY_PUBLIC_URL` задаёт базу для подписанных ссылок на файлы ботов
+(например, `https://83-141-92-137.nip.io`).
 
 Обновление не должно удалять `/opt/tagasay/data`: распаковывайте архив поверх,
 затем выполните `mkdir -p /opt/tagasay/data/media && chown -R tagasay:tagasay
@@ -82,6 +85,8 @@ ReadWritePaths=/opt/tagasay
 - Боты: токены HMAC + AES-GCM под `TAGASAY_BOT_TOKEN_KEY`; в логи не попадают
   текст, токены, `@username`; updates 10 000/7 дней, бот-чаты 30 дней,
   лимит 20 ботов/владельца, 30 msg/s на бота и 1 msg/s в чат.
+- Файлы ботов: 50 МБ, TTL 30 дней, квоты 1 ГБ/бот и 100 МБ/сутки, MIME по
+  magic bytes, подписанные ссылки 1 час; webhook — HTTPS + SSRF-защита.
 - Caddy обязателен: relay слушает `127.0.0.1:8080`, наружу — только TLS.
 - Перед постоянной эксплуатацией: PostgreSQL/Redis, бэкапы с restore-тестом,
   мониторинг `/health` и 5xx, fail2ban, geo-IP на сервере.

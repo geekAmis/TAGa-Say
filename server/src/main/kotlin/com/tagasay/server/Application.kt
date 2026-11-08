@@ -1,10 +1,12 @@
 package com.tagasay.server
 
 import com.tagasay.server.bot.BotAuth
+import com.tagasay.server.bot.BotMediaStore
 import com.tagasay.server.bot.BotSecrets
 import com.tagasay.server.bot.BotService
 import com.tagasay.server.bot.BotStore
 import com.tagasay.server.bot.BotUpdates
+import com.tagasay.server.bot.BotWebhookDelivery
 import com.tagasay.server.bot.botRoutes
 import com.tagasay.server.bot.botUserRoutes
 import com.tagasay.server.data.InMemoryStore
@@ -15,6 +17,7 @@ import com.tagasay.server.routes.envelopeRoutes
 import com.tagasay.server.routes.healthRoutes
 import com.tagasay.server.routes.mediaRoutes
 import com.tagasay.server.routes.profileRoutes
+import com.tagasay.server.routes.roomBotRoutes
 import com.tagasay.server.routes.roomRoutes
 import com.tagasay.server.routes.stateRoutes
 import com.tagasay.server.routes.versionRoutes
@@ -45,6 +48,9 @@ fun Application.module(
     updateStore: UpdateStore = UpdateStore(),
     botStore: BotStore = BotStore(),
     botSecrets: BotSecrets = BotSecrets.fromEnv(),
+    botMedia: BotMediaStore? = null,
+    botWebhook: BotWebhookDelivery? = null,
+    publicBaseUrl: String = System.getenv("TAGASAY_PUBLIC_URL") ?: "https://relay.example",
 ) {
     install(ContentNegotiation) {
         json(
@@ -76,15 +82,19 @@ fun Application.module(
         directoryRoutes(store, aeza)
         mediaRoutes(store, media)
         profileRoutes(store)
-        roomRoutes(store)
+        roomRoutes(store, botStore)
         stateRoutes(store)
         versionRoutes(updateStore)
 
         // Платформа ботов: отдельное хранилище, не смешивается с E2EE.
         val botAuth = BotAuth(botStore, botSecrets)
         val botUpdates = BotUpdates(botStore)
-        val botService = BotService(botStore, store, botAuth, botUpdates)
-        botRoutes(botAuth, botService, botUpdates)
-        botUserRoutes(store, botStore, botService, botUpdates, botAuth)
+        val media = botMedia ?: BotMediaStore(botStore.rootDir(), botSecrets)
+        val webhook = botWebhook ?: BotWebhookDelivery(botStore, botSecrets)
+        val botService = BotService(botStore, store, botAuth, botUpdates, media = media)
+        if (botStore.webhookBotIds().isNotEmpty()) webhook.start()
+        botRoutes(botAuth, botService, botUpdates, botStore, webhook, publicBaseUrl)
+        botUserRoutes(store, botStore, botService, botUpdates, botAuth, publicBaseUrl)
+        roomBotRoutes(store, botStore, botService)
     }
 }

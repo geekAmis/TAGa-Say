@@ -1,6 +1,7 @@
 package com.tagasay.server.routes
 
 import com.tagasay.server.RateLimits
+import com.tagasay.server.bot.BotStore
 import com.tagasay.server.data.InMemoryStore
 import com.tagasay.server.model.CreateRoomRequest
 import com.tagasay.server.model.ErrorResponse
@@ -20,7 +21,7 @@ import java.util.UUID
  * участники, роли). Содержимое сообщений остаётся E2EE: клиент шифрует
  * отдельный конверт каждому участнику.
  */
-fun Route.roomRoutes(store: InMemoryStore) {
+fun Route.roomRoutes(store: InMemoryStore, bots: BotStore? = null) {
     post("/v1/rooms") {
         val authed = call.requireDevice(store) ?: return@post
         if (!RateLimits.allow(call, "room-create", limit = 20)) {
@@ -39,6 +40,10 @@ fun Route.roomRoutes(store: InMemoryStore) {
             .ifBlank { "room_${UUID.randomUUID().toString().take(8)}" }
         if (!username.matches(Regex("[a-z0-9_]{3,32}"))) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("invalid username", "BAD_REQUEST"))
+            return@post
+        }
+        if (bots?.botByUsername(username) != null) {
+            call.respond(HttpStatusCode.Conflict, ErrorResponse("username busy", "CONFLICT"))
             return@post
         }
         val members = request.members

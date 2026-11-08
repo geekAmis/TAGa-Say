@@ -109,11 +109,55 @@ data class BotMessage(
     val entities: List<BotEntity> = emptyList(),
     val replyMarkup: JsonElement? = null,
     val replyToMessageId: String = "",
+    /** photo | document | voice | video | audio */
+    val kind: String = "",
+    val fileId: String = "",
+    val fileUniqueId: String = "",
+    val fileName: String = "",
+    val mimeType: String = "",
+    val fileSize: Long = 0,
     val createdAt: Long = 0,
     val editedAt: Long = 0,
     val deletedAt: Long = 0,
     /** Монотонный курсор для /v1/bots/inbox. */
     val seq: Long = 0,
+)
+
+/** Метаданные файла в BotMediaStore (TTL 30 дней, изоляция по боту). */
+@Serializable
+data class BotFile(
+    val fileId: String,
+    val fileUniqueId: String,
+    val botId: String,
+    val uploader: String,
+    val kind: String,
+    val fileName: String,
+    val mimeType: String,
+    val size: Long,
+    val sha256: String,
+    val storedName: String = "",
+    val createdAt: Long,
+    val expiresAt: Long,
+)
+
+@Serializable
+data class ApiFile(
+    @SerialName("file_id") val fileId: String,
+    @SerialName("file_unique_id") val fileUniqueId: String,
+    @SerialName("file_size") val fileSize: Long,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("file_name") val fileName: String = "",
+)
+
+/** my_chat_member: бот добавлен/удалён/права изменены. */
+@Serializable
+data class BotChatMember(
+    val botId: String,
+    val chatId: String,
+    val actor: String,
+    val oldStatus: String,
+    val newStatus: String,
+    val createdAt: Long = 0,
 )
 
 @Serializable
@@ -143,10 +187,11 @@ data class BotCallbackAnswer(
 data class BotUpdate(
     val botId: String,
     val updateId: Long,
-    /** message | callback_query */
+    /** message | callback_query | channel_post | my_chat_member */
     val type: String,
     val message: BotMessage? = null,
     val callbackQuery: BotCallbackQuery? = null,
+    val chatMember: BotChatMember? = null,
     val createdAt: Long = 0,
     val expiresAt: Long = 0,
 )
@@ -161,6 +206,9 @@ data class BotWebhook(
     val lastError: String = "",
     val failureCount: Int = 0,
     val nextAttemptAt: Long = 0,
+    val createdAt: Long = 0,
+    val lastSuccessAt: Long = 0,
+    val lastErrorAt: Long = 0,
 )
 
 @Serializable
@@ -194,6 +242,7 @@ data class BotSnapshot(
     val offsets: Map<String, Long> = emptyMap(),
     val answers: List<BotCallbackAnswer> = emptyList(),
     val audit: List<BotAudit> = emptyList(),
+    val webhooks: List<BotWebhook> = emptyList(),
 )
 
 /** Событие append-only bot-chats.jsonl. */
@@ -246,10 +295,16 @@ data class ApiMessage(
     @SerialName("chat") val chat: ApiChat,
     @SerialName("from") val from: ApiUser,
     @SerialName("text") val text: String? = null,
+    @SerialName("caption") val caption: String? = null,
     @SerialName("entities") val entities: List<BotEntity> = emptyList(),
     @SerialName("reply_to_message_id") val replyToMessageId: String? = null,
     @SerialName("edit_date") val editDate: Long? = null,
     @SerialName("reply_markup") val replyMarkup: JsonElement? = null,
+    @SerialName("photo") val photo: List<ApiFile>? = null,
+    @SerialName("document") val document: ApiFile? = null,
+    @SerialName("voice") val voice: ApiFile? = null,
+    @SerialName("video") val video: ApiFile? = null,
+    @SerialName("audio") val audio: ApiFile? = null,
 )
 
 @Serializable
@@ -287,6 +342,18 @@ data class InboxMessageDto(
     @SerialName("date") val date: Long = 0,
     @SerialName("edited_at") val editedAt: Long = 0,
     @SerialName("deleted_at") val deletedAt: Long = 0,
+    @SerialName("attachment") val attachment: InboxAttachment? = null,
+)
+
+@Serializable
+data class InboxAttachment(
+    @SerialName("file_id") val fileId: String,
+    @SerialName("file_unique_id") val fileUniqueId: String,
+    @SerialName("kind") val kind: String,
+    @SerialName("file_name") val fileName: String = "",
+    @SerialName("mime_type") val mimeType: String = "",
+    @SerialName("file_size") val fileSize: Long = 0,
+    @SerialName("file_url") val fileUrl: String = "",
 )
 
 @Serializable

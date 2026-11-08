@@ -3,6 +3,7 @@ package com.tagasay.server.bot
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import com.tagasay.server.model.RoomBotRights
 
 @Serializable
 data class SendMessageRequest(
@@ -81,7 +82,44 @@ data class EditBotRequest(
 )
 
 @Serializable
+data class SendFileRequest(
+    @SerialName("chat_id") val chatId: String = "",
+    @SerialName("file_id") val fileId: String = "",
+    val caption: String = "",
+    @SerialName("parse_mode") val parseMode: String? = null,
+    @SerialName("reply_markup") val replyMarkup: JsonElement? = null,
+    @SerialName("reply_to_message_id") val replyToMessageId: String? = null,
+)
+
+@Serializable
+data class SetWebhookRequest(
+    val url: String = "",
+    @SerialName("secret_token") val secretToken: String? = null,
+    @SerialName("allowed_updates") val allowedUpdates: List<String>? = null,
+    @SerialName("drop_pending_updates") val dropPendingUpdates: Boolean = false,
+    @SerialName("max_connections") val maxConnections: Int = 1,
+)
+
+@Serializable
+data class DeleteWebhookRequest(
+    @SerialName("drop_pending_updates") val dropPendingUpdates: Boolean = false,
+)
+
+@Serializable
+data class AddRoomBotRequest(
+    val username: String = "",
+    val rights: RoomBotRights = RoomBotRights(),
+)
+
+@Serializable
+data class SetRoomBotRightsRequest(
+    val rights: RoomBotRights = RoomBotRights(),
+)
+
+@Serializable
 data class UserSendOutcome(
-    val inbound: BotMessage,
+    val inbound: BotMessage? = null,
     val replies: List<BotMessage> = emptyList(),
+    /** false — сообщение не адресовано боту (privacy mode), plaintext не сохранён. */
+    val delivered: Boolean = true,
 )

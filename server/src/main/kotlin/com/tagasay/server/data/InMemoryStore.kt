@@ -3,6 +3,8 @@ package com.tagasay.server.data
 import com.tagasay.server.model.Device
 import com.tagasay.server.model.Envelope
 import com.tagasay.server.model.Room
+import com.tagasay.server.model.RoomBot
+import com.tagasay.server.model.RoomBotRights
 import com.tagasay.server.model.UserProfile
 import com.tagasay.server.model.UserState
 import kotlinx.coroutines.sync.Mutex
@@ -166,6 +168,99 @@ class InMemoryStore(private val persistPath: String? = null) {
             .sortedBy { it.createdAt }
     }
 
+    /**
+     * Комнаты, доступные пользователю, и момент вступления (0 — владелец/админ,
+     * видит всю историю). Новые участники не получают старые бот-сообщения.
+     */
+    fun roomAccess(username: String): Map<String, Long> {
+        val clean = username.lowercase()
+        return rooms.values
+            .filter {
+                it.owner.equals(clean, true) ||
+                    it.admins.any { admin -> admin.equals(clean, true) } ||
+                    it.members.any { member -> member.equals(clean, true) }
+            }
+            .associate { room ->
+                val privileged = room.owner.equals(clean, true) ||
+                    room.admins.any { it.equals(clean, true) }
+                room.id to if (privileged) 0L else room.memberSince[clean] ?: 0L
+            }
+    }
+
+    fun isRoomAdmin(id: String, username: String): Boolean {
+        val room = rooms[id] ?: return false
+        val clean = username.lowercase()
+        return room.owner.equals(clean, true) || room.admins.any { it.equals(clean, true) }
+    }
+
+    fun roomBot(id: String, username: String): RoomBot? {
+        val clean = username.trimStart('@').lowercase()
+        return rooms[id]?.bots?.firstOrNull { it.username.equals(clean, true) }
+    }
+
+    suspend fun addRoomBot(
+        id: String,
+        actor: String,
+        botUsername: String,
+        rights: RoomBotRights,
+    ): Room? = mutex.withLock {
+        val room = rooms[id] ?: return@withLock null
+        val cleanActor = actor.lowercase()
+        val isAdmin = room.owner.equals(cleanActor, true) ||
+            room.admins.any { it.equals(cleanActor, true) }
+        if (!isAdmin) return@withLock null
+        val cleanBot = botUsername.trimStart('@').lowercase()
+        if (room.bots.any { it.username.equals(cleanBot, true) }) return@withLock null
+        val next = room.copy(
+            bots = room.bots + RoomBot(
+                username = cleanBot,
+                addedBy = cleanActor,
+                addedAt = System.currentTimeMillis(),
+                rights = rights,
+            ),
+        )
+        rooms[id] = next
+        persist()
+        next
+    }
+
+    suspend fun removeRoomBot(id: String, actor: String, botUsername: String): Room? = mutex.withLock {
+        val room = rooms[id] ?: return@withLock null
+        val cleanActor = actor.lowercase()
+        val isAdmin = room.owner.equals(cleanActor, true) ||
+            room.admins.any { it.equals(cleanActor, true) }
+        if (!isAdmin) return@withLock null
+        val cleanBot = botUsername.trimStart('@').lowercase()
+        if (room.bots.none { it.username.equals(cleanBot, true) }) return@withLock null
+        val next = room.copy(bots = room.bots.filterNot { it.username.equals(cleanBot, true) })
+        rooms[id] = next
+        persist()
+        next
+    }
+
+    suspend fun setRoomBotRights(
+        id: String,
+        actor: String,
+        botUsername: String,
+        rights: RoomBotRights,
+    ): Room? = mutex.withLock {
+        val room = rooms[id] ?: return@withLock null
+        val cleanActor = actor.lowercase()
+        val isAdmin = room.owner.equals(cleanActor, true) ||
+            room.admins.any { it.equals(cleanActor, true) }
+        if (!isAdmin) return@withLock null
+        val cleanBot = botUsername.trimStart('@').lowercase()
+        if (room.bots.none { it.username.equals(cleanBot, true) }) return@withLock null
+        val next = room.copy(
+            bots = room.bots.map {
+                if (it.username.equals(cleanBot, true)) it.copy(rights = rights) else it
+            },
+        )
+        rooms[id] = next
+        persist()
+        next
+    }
+
     fun searchRooms(username: String): List<Room> {
         val clean = username.lowercase()
         return rooms.values
@@ -178,13 +273,16 @@ class InMemoryStore(private val persistPath: String? = null) {
     suspend fun createRoom(room: Room): Room? = mutex.withLock {
         if (roomByUsername(room.username) != null) return@withLock null
         val cleanOwner = room.owner.lowercase()
+        val members = (room.members + cleanOwner).map { it.lowercase().trimStart('@') }.distinct()
+        val createdAt = if (room.createdAt > 0) room.createdAt else System.currentTimeMillis()
         val next = room.copy(
             id = room.id.ifBlank { "room_${System.currentTimeMillis()}_${(0..999).random()}" },
             username = room.username.trimStart('@').lowercase(),
             owner = cleanOwner,
             admins = room.admins.map { it.lowercase() }.distinct(),
-            members = (room.members + cleanOwner).map { it.lowercase().trimStart('@') }.distinct(),
-            createdAt = if (room.createdAt > 0) room.createdAt else System.currentTimeMillis(),
+            members = members,
+            createdAt = createdAt,
+            memberSince = members.associateWith { createdAt },
         )
         rooms[next.id] = next
         persist()
@@ -194,7 +292,14 @@ class InMemoryStore(private val persistPath: String? = null) {
     suspend fun joinRoom(id: String, username: String): Room? = mutex.withLock {
         val room = rooms[id] ?: return@withLock null
         val clean = username.lowercase()
-        val next = room.copy(members = (room.members + clean).distinct())
+        val next = room.copy(
+            members = (room.members + clean).distinct(),
+            memberSince = if (room.memberSince.containsKey(clean)) {
+                room.memberSince
+            } else {
+                room.memberSince + (clean to System.currentTimeMillis())
+            },
+        )
         rooms[id] = next
         persist()
         next
@@ -213,6 +318,7 @@ class InMemoryStore(private val persistPath: String? = null) {
             members = members,
             owner = if (room.owner.equals(clean, true)) members.first() else room.owner,
             admins = room.admins.filterNot { it.equals(clean, true) },
+            memberSince = room.memberSince - clean,
         )
         rooms[id] = next
         persist()
@@ -237,7 +343,12 @@ class InMemoryStore(private val persistPath: String? = null) {
         } else {
             (room.members + cleanTarget).distinct()
         }
-        val next = room.copy(members = members)
+        val since = when {
+            remove -> room.memberSince - cleanTarget
+            room.memberSince.containsKey(cleanTarget) -> room.memberSince
+            else -> room.memberSince + (cleanTarget to System.currentTimeMillis())
+        }
+        val next = room.copy(members = members, memberSince = since)
         rooms[id] = next
         persist()
         next

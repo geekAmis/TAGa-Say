@@ -30,6 +30,7 @@ class BotStore(private val root: File? = defaultRoot()) {
     private val updates = HashMap<String, ArrayDeque<BotUpdate>>()
     private val updateCounters = HashMap<String, Long>()
     private val offsets = HashMap<String, Long>()
+    private val webhooks = HashMap<String, BotWebhook>()
     private val messages = HashMap<String, LinkedHashMap<String, BotMessage>>()
     private val answers = ArrayList<BotCallbackAnswer>()
     private val auditLog = ArrayList<BotAudit>()
@@ -243,6 +244,7 @@ class BotStore(private val root: File? = defaultRoot()) {
         type: String,
         message: BotMessage? = null,
         callbackQuery: BotCallbackQuery? = null,
+        chatMember: BotChatMember? = null,
     ): BotUpdate = synchronized(lock) {
         val now = System.currentTimeMillis()
         val updateId = (updateCounters[botId] ?: 1L)
@@ -253,6 +255,7 @@ class BotStore(private val root: File? = defaultRoot()) {
             type = type,
             message = message,
             callbackQuery = callbackQuery,
+            chatMember = chatMember,
             createdAt = now,
             expiresAt = now + UPDATE_TTL_MS,
         )
@@ -277,6 +280,48 @@ class BotStore(private val root: File? = defaultRoot()) {
             .filter { allowed.isEmpty() || it.type in allowed }
             .take(limit)
             .toList()
+    }
+
+    fun webhookPending(
+        botId: String,
+        limit: Int,
+        allowed: Set<String>,
+    ): List<BotUpdate> = synchronized(lock) {
+        val now = System.currentTimeMillis()
+        val queue = updates[botId] ?: return@synchronized emptyList()
+        queue.removeAll { it.expiresAt in 1..now }
+        queue.asSequence()
+            .filter { allowed.isEmpty() || it.type in allowed }
+            .take(limit)
+            .toList()
+    }
+
+    fun pendingUpdateCount(botId: String): Int = synchronized(lock) {
+        val now = System.currentTimeMillis()
+        updates[botId]?.count { it.expiresAt == 0L || it.expiresAt > now } ?: 0
+    }
+
+    // -------------------------------------------------------------- webhooks
+
+    fun webhook(botId: String): BotWebhook? = synchronized(lock) { webhooks[botId] }
+
+    fun setWebhook(hook: BotWebhook) = synchronized(lock) {
+        webhooks[hook.botId] = hook
+        saveSnapshot()
+    }
+
+    fun deleteWebhook(botId: String): Boolean = synchronized(lock) {
+        val removed = webhooks.remove(botId) != null
+        if (removed) saveSnapshot()
+        removed
+    }
+
+    fun webhookBotIds(): List<String> = synchronized(lock) { webhooks.keys.toList() }
+
+    fun updateWebhook(botId: String, transform: (BotWebhook) -> BotWebhook) = synchronized(lock) {
+        val current = webhooks[botId] ?: return@synchronized
+        webhooks[botId] = transform(current)
+        saveSnapshot()
     }
 
     fun acknowledge(botId: String, offset: Long) = synchronized(lock) {
@@ -340,15 +385,31 @@ class BotStore(private val root: File? = defaultRoot()) {
         withSeq
     }
 
-    fun inbox(user: String, since: Long, limit: Int): List<InboxEntry> = synchronized(lock) {
+    fun inbox(
+        user: String,
+        since: Long,
+        limit: Int,
+        roomAccess: Map<String, Long> = emptyMap(),
+    ): List<InboxEntry> = synchronized(lock) {
         val clean = user.lowercase()
         val chatId = "u:$clean"
         val result = ArrayList<InboxEntry>()
         for ((botId, perBot) in messages) {
             val bot = bots[botId] ?: continue
             for (message in perBot.values) {
-                if (message.chatId != chatId || message.direction != "out") continue
-                if (message.seq <= since) continue
+                if (message.direction != "out" || message.seq <= since) continue
+                val roomId = when {
+                    message.chatId.startsWith("g:") || message.chatId.startsWith("c:") ->
+                        message.chatId.substringAfter(':')
+                    else -> null
+                }
+                val visible = if (roomId == null) {
+                    message.chatId == chatId
+                } else {
+                    val joinedAt = roomAccess[roomId]
+                    joinedAt != null && message.createdAt >= joinedAt
+                }
+                if (!visible) continue
                 val entry = inboxEntry(bot, message)
                 result.add(InboxEntry(seq = message.seq, event = entry))
             }
@@ -406,6 +467,9 @@ class BotStore(private val root: File? = defaultRoot()) {
 
     private fun key(botId: String, username: String) = "$botId|${username.lowercase()}"
 
+    /** Каталог BotStore (null — режим только в памяти). */
+    fun rootDir(): File? = root
+
     private fun inboxEntry(bot: Bot, message: BotMessage): InboxEventDto {
         val type = when {
             message.deletedAt > 0 -> "bot_messages_deleted"
@@ -429,6 +493,18 @@ class BotStore(private val root: File? = defaultRoot()) {
                 date = message.createdAt / 1000,
                 editedAt = message.editedAt,
                 deletedAt = message.deletedAt,
+                attachment = if (message.fileId.isBlank()) {
+                    null
+                } else {
+                    InboxAttachment(
+                        fileId = message.fileId,
+                        fileUniqueId = message.fileUniqueId,
+                        kind = message.kind.ifBlank { "document" },
+                        fileName = message.fileName,
+                        mimeType = message.mimeType,
+                        fileSize = message.fileSize,
+                    )
+                },
             ),
         )
     }
@@ -466,6 +542,7 @@ class BotStore(private val root: File? = defaultRoot()) {
                 answers.addAll(snapshot.answers)
                 answers.forEach { nextSeq = maxOf(nextSeq, it.seq + 1) }
                 auditLog.addAll(snapshot.audit)
+                snapshot.webhooks.forEach { webhooks[it.botId] = it }
             }.onFailure { log.warn("bot snapshot ignored: {}", it.javaClass.simpleName) }
         }
         loadUpdates(File(dir, "bot-updates.jsonl"))
@@ -537,6 +614,7 @@ class BotStore(private val root: File? = defaultRoot()) {
                 offsets = offsets.toMap(),
                 answers = answers.toList(),
                 audit = auditLog.toList(),
+                webhooks = webhooks.values.toList(),
             )
             writeAtomic(File(dir, "bots.json"), json.encodeToString(BotSnapshot.serializer(), snapshot))
         }.onFailure { log.warn("bot snapshot write failed: {}", it.javaClass.simpleName) }

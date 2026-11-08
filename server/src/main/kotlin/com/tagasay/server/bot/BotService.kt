@@ -1,6 +1,8 @@
 package com.tagasay.server.bot
 
 import com.tagasay.server.data.InMemoryStore
+import com.tagasay.server.model.Room
+import com.tagasay.server.model.RoomBotRights
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -21,6 +23,7 @@ class BotService(
     private val auth: BotAuth,
     private val updates: BotUpdates,
     val rateLimits: BotRateLimits = BotRateLimits(),
+    private val media: BotMediaStore? = null,
 ) {
     private val log = LoggerFactory.getLogger(BotService::class.java)
     private val random = SecureRandom()
@@ -134,14 +137,9 @@ class BotService(
 
     fun sendMessage(bot: Bot, request: SendMessageRequest, enforceRateLimit: Boolean = true): BotMessage {
         val chatId = normalizeChatId(request.chatId)
-        BotPermissions.chatDenied(bot, chatId)?.let { throw BotApiException(403, it) }
         val parsed = parseText(request.text, request.parseMode, request.entities)
         val markup = BotMarkup.validate(request.replyMarkup, bot, privateChat = chatId.startsWith("u:"))
-        if (chatId.startsWith("u:")) {
-            val username = chatId.removePrefix("u:")
-            if (users.deviceByUsername(username) == null) throw BotApiException(404, "chat not found")
-            ensureCanWrite(bot, username)
-        }
+        authorizeChat(bot, chatId)
         if (enforceRateLimit && !rateLimits.allowChat(bot.id, chatId)) {
             throw BotApiException(429, "too many messages to this chat", retryAfter = 1)
         }
@@ -158,6 +156,113 @@ class BotService(
             createdAt = System.currentTimeMillis(),
         )
         return store.putMessage(message)
+    }
+
+    /**
+     * Отправка файла (photo/document/voice/video/audio). Либо новый upload
+     * (bytes), либо ранее выданный file_id этого же бота. Чужой file_id → 404.
+     */
+    fun sendFile(
+        bot: Bot,
+        chatIdRaw: String,
+        kind: String,
+        bytes: ByteArray?,
+        originalFileName: String?,
+        existingFileId: String?,
+        caption: String,
+        parseMode: String?,
+        replyMarkup: JsonElement?,
+        replyToMessageId: String?,
+        enforceRateLimit: Boolean = true,
+    ): BotMessage {
+        val storeMedia = media ?: throw BotApiException(400, "files are not enabled on this server")
+        val chatId = normalizeChatId(chatIdRaw)
+        authorizeChat(bot, chatId)
+        val normalizedKind = kind.lowercase()
+        if (normalizedKind !in FILE_KINDS) throw BotApiException(400, "unsupported file method")
+        val file = when {
+            !existingFileId.isNullOrBlank() ->
+                storeMedia.get(bot.id, existingFileId)
+                    ?: throw BotApiException(404, "file not found")
+            bytes != null ->
+                storeMedia.save(
+                    botId = bot.id,
+                    uploader = bot.username,
+                    kind = normalizedKind,
+                    bytes = bytes,
+                    originalFileName = originalFileName.orEmpty(),
+                )
+            else -> throw BotApiException(400, "file or file_id is required")
+        }
+        if (!existingFileId.isNullOrBlank() && file.kind != normalizedKind) {
+            throw BotApiException(400, "file_id belongs to another media type")
+        }
+        val parsed = if (caption.isBlank()) {
+            BotText.Parsed("", emptyList())
+        } else {
+            val value = parseText(caption, parseMode, null)
+            if (value.text.length > MAX_CAPTION) {
+                throw BotApiException(400, "caption is too long (max $MAX_CAPTION)")
+            }
+            value
+        }
+        val markup = BotMarkup.validate(replyMarkup, bot, privateChat = chatId.startsWith("u:"))
+        if (enforceRateLimit && !rateLimits.allowChat(bot.id, chatId)) {
+            throw BotApiException(429, "too many messages to this chat", retryAfter = 1)
+        }
+        val message = BotMessage(
+            botId = bot.id,
+            chatId = chatId,
+            messageId = newMessageId(),
+            direction = "out",
+            author = bot.username,
+            text = parsed.text,
+            entities = parsed.entities,
+            replyMarkup = markup,
+            replyToMessageId = replyToMessageId.orEmpty(),
+            kind = file.kind,
+            fileId = file.fileId,
+            fileUniqueId = file.fileUniqueId,
+            fileName = file.fileName,
+            mimeType = file.mimeType,
+            fileSize = file.size,
+            createdAt = System.currentTimeMillis(),
+        )
+        return store.putMessage(message)
+    }
+
+    fun getFile(bot: Bot, fileId: String): BotFile {
+        val storeMedia = media ?: throw BotApiException(400, "files are not enabled on this server")
+        if (fileId.isBlank()) throw BotApiException(400, "file_id is required")
+        return storeMedia.get(bot.id, fileId) ?: throw BotApiException(404, "file not found")
+    }
+
+    /** Ссылка на файл с TTL 1 час и подписью (без бот-токена в URL). */
+    fun fileUrl(baseUrl: String, file: BotFile): String {
+        val storeMedia = media ?: throw BotApiException(400, "files are not enabled on this server")
+        return storeMedia.signedUrl(baseUrl, file)
+    }
+
+    fun mediaStore(): BotMediaStore? = media
+
+    private fun authorizeChat(bot: Bot, chatId: String) {
+        when {
+            chatId.startsWith("u:") -> {
+                val username = chatId.removePrefix("u:")
+                if (users.deviceByUsername(username) == null) throw BotApiException(404, "chat not found")
+                ensureCanWrite(bot, username)
+            }
+            chatId.startsWith("g:") || chatId.startsWith("c:") -> {
+                val room = users.room(chatId.substringAfter(':'))
+                    ?: throw BotApiException(404, "chat not found")
+                val roomBot = room.bots.firstOrNull { it.username.equals(bot.username, true) }
+                    ?: throw BotApiException(403, "bot is not a member of this chat")
+                if (room.channel && !roomBot.rights.postMessages) {
+                    throw BotApiException(403, "bot has no post_messages right in this channel")
+                }
+            }
+            else -> throw BotApiException(400, "unsupported chat_id")
+        }
     }
 
     fun editMessageText(bot: Bot, request: EditMessageTextRequest): BotMessage {
@@ -238,7 +343,15 @@ class BotService(
 
     // ------------------------------------------------------- user ↔ bot
 
-    fun ingestUserMessage(username: String, bot: Bot, request: UserSendToBotRequest): UserSendOutcome {
+    fun ingestUserMessage(username: String, bot: Bot, request: UserSendToBotRequest): UserSendOutcome =
+        ingestChatMessage(username, bot, "u:${username.lowercase()}", request)
+
+    fun ingestChatMessage(
+        username: String,
+        bot: Bot,
+        chatIdRaw: String,
+        request: UserSendToBotRequest,
+    ): UserSendOutcome {
         if (!request.attachmentId.isNullOrBlank()) {
             throw BotApiException(400, "attachments are not supported in this release")
         }
@@ -248,6 +361,11 @@ class BotService(
         if (bot.status != "active") throw BotApiException(404, "bot not found")
 
         val clean = username.lowercase()
+        val chatId = normalizeChatId(chatIdRaw)
+        if (!chatId.startsWith("u:")) {
+            return ingestRoomMessage(clean, bot, chatId, request, text)
+        }
+
         val isStart = text.startsWith("/start", ignoreCase = true)
         val isStop = text.equals("/stop", ignoreCase = true)
         val blocked = store.userState(bot.id, clean)?.blockedAt ?: 0L
@@ -261,7 +379,7 @@ class BotService(
         val inbound = store.putMessage(
             BotMessage(
                 botId = bot.id,
-                chatId = "u:$clean",
+                chatId = chatId,
                 messageId = newMessageId(),
                 direction = "in",
                 author = clean,
@@ -280,7 +398,7 @@ class BotService(
                 sendMessage(
                     bot,
                     SendMessageRequest(
-                        chatId = "u:$clean",
+                        chatId = chatId,
                         text = reply.text,
                         replyMarkup = reply.replyMarkup,
                     ),
@@ -292,6 +410,119 @@ class BotService(
         store.appendUpdate(bot.id, "message", message = inbound)
         return UserSendOutcome(inbound = inbound)
     }
+
+    /**
+     * Сообщение пользователя в комнату с ботом. Privacy mode: в группе бот
+     * получает только команды, упоминания и ответы на свои сообщения.
+     * В канале — только при праве post_messages (admin), тип channel_post.
+     */
+    private fun ingestRoomMessage(
+        username: String,
+        bot: Bot,
+        chatId: String,
+        request: UserSendToBotRequest,
+        text: String,
+    ): UserSendOutcome {
+        val room = users.room(chatId.substringAfter(':'))
+            ?: throw BotApiException(404, "chat not found")
+        val roomBot = room.bots.firstOrNull { it.username.equals(bot.username, true) }
+            ?: throw BotApiException(403, "bot is not a member of this chat")
+        val isMember = room.owner.equals(username, true) ||
+            room.admins.any { it.equals(username, true) } ||
+            room.members.any { it.equals(username, true) }
+        if (!isMember) throw BotApiException(403, "not a room member")
+
+        if (room.channel) {
+            if (!roomBot.rights.postMessages) {
+                throw BotApiException(403, "bot has no post_messages right in this channel")
+            }
+        } else if (bot.privacyMode && !addressedToBot(bot, chatId, text, request.replyTo)) {
+            // Не адресовано боту: людям сообщение уходит своим E2EE-каналом,
+            // бот ничего не получает и plaintext-копия не сохраняется.
+            return UserSendOutcome(inbound = null, delivered = false)
+        }
+
+        val inbound = store.putMessage(
+            BotMessage(
+                botId = bot.id,
+                chatId = chatId,
+                messageId = newMessageId(),
+                direction = "in",
+                author = username,
+                text = text,
+                replyToMessageId = request.replyTo.orEmpty(),
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+        store.appendUpdate(
+            bot.id,
+            if (room.channel) "channel_post" else "message",
+            message = inbound,
+        )
+        return UserSendOutcome(inbound = inbound, delivered = true)
+    }
+
+    private fun addressedToBot(bot: Bot, chatId: String, text: String, replyTo: String?): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.startsWith("/")) return true
+        if (trimmed.contains("@${bot.username}", ignoreCase = true)) return true
+        if (!replyTo.isNullOrBlank()) {
+            val replied = store.message(bot.id, chatId, replyTo)
+            if (replied?.direction == "out") return true
+        }
+        return false
+    }
+
+    // ------------------------------------------------------- room membership
+
+    fun onRoomBotAdded(bot: Bot, room: Room, actor: String) {
+        store.appendUpdate(
+            bot.id,
+            "my_chat_member",
+            chatMember = BotChatMember(
+                botId = bot.id,
+                chatId = chatIdForRoom(room),
+                actor = actor.lowercase(),
+                oldStatus = "left",
+                newStatus = "member",
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    fun onRoomBotRemoved(bot: Bot, room: Room, actor: String) {
+        store.appendUpdate(
+            bot.id,
+            "my_chat_member",
+            chatMember = BotChatMember(
+                botId = bot.id,
+                chatId = chatIdForRoom(room),
+                actor = actor.lowercase(),
+                oldStatus = "member",
+                newStatus = "kicked",
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    fun onRoomBotRightsChanged(bot: Bot, room: Room, actor: String, rights: RoomBotRights) {
+        val status = if (rights.postMessages) "administrator" else "member"
+        store.appendUpdate(
+            bot.id,
+            "my_chat_member",
+            chatMember = BotChatMember(
+                botId = bot.id,
+                chatId = chatIdForRoom(room),
+                actor = actor.lowercase(),
+                oldStatus = "member",
+                newStatus = status,
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    private fun chatIdForRoom(room: Room): String =
+        (if (room.channel) "c:" else "g:") + room.id
 
     fun userCallback(username: String, bot: Bot, request: UserCallbackRequest): List<BotMessage> {
         val clean = username.lowercase()
@@ -401,9 +632,12 @@ class BotService(
     companion object {
         const val MAX_BOTS_PER_OWNER = 20
         const val MAX_TEXT = 4096
+        const val MAX_CAPTION = 1024
         const val MAX_COMMANDS = 100
         const val BOTFATHER_USERNAME = "botfather"
         private const val CALLBACK_TTL_MS = 15 * 60 * 1000L
+
+        val FILE_KINDS = setOf("photo", "document", "voice", "video", "audio")
 
         val USERNAME_REGEX = Regex("[a-z0-9_]{5,32}")
         val COMMAND_REGEX = Regex("[a-z0-9_]{1,32}")

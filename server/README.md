@@ -38,10 +38,14 @@ docker compose up --build
 | GET | `/v1/server/info` | версия и соль сервера |
 | GET/POST | `/bot/v1/getMe`, `/bot/v1/getUpdates` | Bot API: бот и updates |
 | POST | `/bot/v1/sendMessage`, `editMessageText`, `deleteMessage` | Bot API: сообщения |
+| POST | `/bot/v1/sendPhoto`, `sendDocument`, `sendVoice`, `sendVideo`, `sendAudio` | файлы (multipart или `file_id`) |
+| GET | `/bot/v1/getFile`, `/bot/v1/file/{id}` | метаданные и подписанное скачивание |
+| POST | `/bot/v1/setWebhook`, `deleteWebhook`, GET `getWebhookInfo` | webhook |
 | GET/POST | `/bot/v1/getMyCommands`, `setMyCommands`, `deleteMyCommands` | команды |
 | POST | `/bot/v1/answerCallbackQuery` | callback |
 | GET | `/v1/bots`, `/v1/bots/{username}`, `/v1/bots/mine`, `/v1/bots/inbox` | пользовательский API ботов |
 | POST | `/v1/bots/{username}/send`, `/callback`, `/block`, `/token`, `/revoke`, `/update` | управление и чат |
+| GET/POST | `/v1/rooms/{id}/bots`, `.../rights` | боты в комнатах (owner/admin) |
 
 Сервер не принимает открытый текст для пользовательских чатов. Бот-чаты —
 осознанно plaintext (ADR-004); контракты — [../docs/bot-api.md](../docs/bot-api.md).
@@ -56,6 +60,7 @@ docker compose up --build
 | `TAGASAY_BOT_DATA` | `<parent TAGASAY_DATA>/bots` | отдельный BotStore |
 | `TAGASAY_BOT_TOKEN_KEY` | dev-ключ | мастер-ключ токенов ботов, ≥32 символов; **обязателен при `TAGASAY_ENV=production`** |
 | `TAGASAY_ENV` | — | `production` включает fail-fast без ключа |
+| `TAGASAY_PUBLIC_URL` | `https://relay.example` | база для подписанных ссылок на файлы ботов |
 
 ## TODO
 

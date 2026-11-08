@@ -30,6 +30,7 @@ fun Route.botUserRoutes(
     service: BotService,
     updates: BotUpdates,
     auth: BotAuth,
+    publicBaseUrl: String,
 ) {
     route("/v1/bots") {
         get {
@@ -99,11 +100,26 @@ fun Route.botUserRoutes(
             val since = call.request.queryParameters["since"]?.toLongOrNull() ?: 0L
             val timeout = call.request.queryParameters["timeout"]?.toIntOrNull() ?: 0
             val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
-            val batch = updates.awaitInbox(authed.device.username, since, limit, timeout)
+            val roomAccess = store.roomAccess(authed.device.username)
+            val batch = updates.awaitInbox(authed.device.username, since, limit, timeout, roomAccess)
+            val media = service.mediaStore()
+            val events = batch.map { entry ->
+                val message = entry.event.message
+                val attachment = message?.attachment
+                if (message == null || attachment == null || media == null) {
+                    entry.event
+                } else {
+                    val file = media.find(attachment.fileId)
+                    val url = if (file != null) media.signedUrl(publicBaseUrl, file) else ""
+                    entry.event.copy(
+                        message = message.copy(attachment = attachment.copy(fileUrl = url)),
+                    )
+                }
+            }
             call.respond(
                 BotJson.json.encodeToJsonElement(
                     ListSerializer(InboxEventDto.serializer()),
-                    batch.map { it.event },
+                    events,
                 ),
             )
         }
@@ -123,13 +139,14 @@ fun Route.botUserRoutes(
                 ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("invalid JSON", "BAD_REQUEST"))
             val requested = request.chatId.trim()
             val self = "u:${authed.device.username.lowercase()}"
-            if (requested.isNotEmpty() &&
+            val isRoomChat = requested.startsWith("g:") || requested.startsWith("c:")
+            if (requested.isNotEmpty() && !isRoomChat &&
                 !requested.equals(self, ignoreCase = true) &&
                 !requested.equals(authed.device.username, ignoreCase = true)
             ) {
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    ErrorResponse("bot rooms are not enabled in this release", "UNSUPPORTED"),
+                    ErrorResponse("can send only to yourself or to a room", "UNSUPPORTED"),
                 )
                 return@post
             }
@@ -142,10 +159,12 @@ fun Route.botUserRoutes(
                 return@post
             }
             try {
-                val outcome = service.ingestUserMessage(authed.device.username, bot, request)
+                val effectiveChat = requested.ifBlank { self }
+                val outcome = service.ingestChatMessage(authed.device.username, bot, effectiveChat, request)
                 val body = buildJsonObject {
                     put("accepted", true)
-                    put("message_id", outcome.inbound.messageId)
+                    put("delivered", outcome.delivered)
+                    put("message_id", outcome.inbound?.messageId ?: "")
                     put("client_msg_id", request.clientMsgId)
                     put(
                         "reply_message_ids",

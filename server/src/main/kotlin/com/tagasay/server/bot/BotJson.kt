@@ -48,16 +48,33 @@ internal object BotJson {
                 isBot = false,
             )
         }
+        val file = if (message.fileId.isBlank()) {
+            null
+        } else {
+            ApiFile(
+                fileId = message.fileId,
+                fileUniqueId = message.fileUniqueId,
+                fileSize = message.fileSize,
+                mimeType = message.mimeType,
+                fileName = message.fileName,
+            )
+        }
         return ApiMessage(
             messageId = message.messageId,
             date = message.createdAt / 1000,
             chat = chatFor(message.chatId),
             from = from,
-            text = message.text,
+            text = message.text.takeIf { file == null },
+            caption = message.text.takeIf { file != null && it.isNotEmpty() },
             entities = message.entities,
             replyToMessageId = message.replyToMessageId.takeIf { it.isNotBlank() },
             editDate = message.editedAt.takeIf { it > 0 }?.div(1000),
             replyMarkup = message.replyMarkup,
+            photo = if (message.kind == "photo" && file != null) listOf(file) else null,
+            document = if (message.kind == "document" && file != null) file else null,
+            voice = if (message.kind == "voice" && file != null) file else null,
+            video = if (message.kind == "video" && file != null) file else null,
+            audio = if (message.kind == "audio" && file != null) file else null,
         )
     }
 
@@ -69,6 +86,8 @@ internal object BotJson {
             put("update_id", update.updateId)
             when (update.type) {
                 "message" -> update.message?.let { put("message", encodeMessage(bot, it)) }
+                "channel_post" -> update.message?.let { put("channel_post", encodeMessage(bot, it)) }
+                "my_chat_member" -> update.chatMember?.let { member -> put("my_chat_member", chatMemberJson(member, bot)) }
                 "callback_query" -> update.callbackQuery?.let { query ->
                     put(
                         "callback_query",
@@ -97,6 +116,41 @@ internal object BotJson {
 
     fun encodeCommands(commands: List<BotCommand>): JsonElement =
         json.encodeToJsonElement(ListSerializer(BotCommand.serializer()), commands)
+
+    private fun chatMemberJson(member: BotChatMember, bot: Bot): JsonElement = buildJsonObject {
+        put("chat", json.encodeToJsonElement(ApiChat.serializer(), chatFor(member.chatId)))
+        put(
+            "from",
+            json.encodeToJsonElement(
+                ApiUser.serializer(),
+                ApiUser(
+                    id = "u:${member.actor}",
+                    username = member.actor,
+                    displayName = member.actor,
+                    isBot = false,
+                ),
+            ),
+        )
+        put("date", member.createdAt / 1000)
+        put("old_chat_member", memberState(member.oldStatus, bot))
+        put("new_chat_member", memberState(member.newStatus, bot))
+    }
+
+    private fun memberState(status: String, bot: Bot): JsonElement = buildJsonObject {
+        put("status", status)
+        put(
+            "user",
+            json.encodeToJsonElement(
+                ApiUser.serializer(),
+                ApiUser(
+                    id = "b:${bot.username}",
+                    username = bot.username,
+                    displayName = bot.displayName,
+                    isBot = true,
+                ),
+            ),
+        )
+    }
 
     fun card(bot: Bot, state: BotUserState?): JsonElement = buildJsonObject {
         put("username", bot.username)

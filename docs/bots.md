@@ -2,11 +2,13 @@
 
 > **Статус 1.2.0 (сервер):** ядро платформы и @BotFather работают.
 > Реализованы `getMe`, `getUpdates`, `sendMessage`, `editMessageText`,
-> `deleteMessage`, команды, callback, `/start`-gate и `BotStore`.
+> `deleteMessage`, команды, callback, `/start`-gate, `BotStore`, файлы
+> (`sendPhoto`/`sendDocument`/`sendVoice`/`sendVideo`/`sendAudio`, `getFile`),
+> webhook и боты в группах/каналах.
 > Подробные контракты — [bot-api.md](bot-api.md), паритет BotFather —
 > [botfather.md](botfather.md), безопасность — [bot-security.md](bot-security.md).
-> Файлы, webhook, Web App, inline и боты в комнатах — `[~]` (следующие этапы):
-> методы честно возвращают `400 unsupported`, без имитации.
+> Web App, inline, административные методы комнат (pin/ban/restrict/инвайты) —
+> `[~]` (следующие этапы): методы честно возвращают `400 unsupported`.
 
 Боты — первоклассные участники мессенджера: их можно добавить в личный чат, группу или
 канал, вызвать командой, они умеют отвечать, редактировать сообщения, присылать файлы и
@@ -71,15 +73,16 @@ GET /getUpdates?offset=<update_id>&limit=100&timeout=30
 }
 ```
 
-Типы в 1.2.0: `message`, `callback_query`. Остальные (`edited_message`,
-`channel_post`, `chat_member`, `message_reaction`, …) — `[~]` вместе с
-комнатами и файлами.
+Типы в 1.2.0: `message`, `channel_post`, `callback_query`, `my_chat_member`.
+Остальные (`edited_message`, `chat_member`, `message_reaction`, …) — `[~]`.
 
-### 3.2. Webhook `[~]`
+### 3.2. Webhook
 
-Не включён в 1.2.0: `setWebhook`/`deleteWebhook`/`getWebhookInfo`
-возвращают `400 unsupported`. Проектные требования (SSRF, HMAC, ретраи) —
-[bot-security.md](bot-security.md) §6 и ADR-007.
+`setWebhook`/`deleteWebhook`/`getWebhookInfo` включены: только HTTPS,
+SSRF-защита (private/loopback/metadata, повторный DNS), HMAC +
+`X-TAGa-Say-Bot-Api-Secret-Token`, таймаут 5 с, 3 ретрая, `last_error`,
+409 при активном `getUpdates`. Полный контракт —
+[bot-api.md](bot-api.md) §3.9, безопасность — [bot-security.md](bot-security.md) §6.
 
 ### 3.3. Методы
 
@@ -87,16 +90,16 @@ GET /getUpdates?offset=<update_id>&limit=100&timeout=30
 |---|---|---|
 | `getMe` | ✅ | информация о боте |
 | `getUpdates` | ✅ | long polling |
-| `setWebhook` / `deleteWebhook` / `getWebhookInfo` | `[~]` | следующая версия |
+| `setWebhook` / `deleteWebhook` / `getWebhookInfo` | ✅ | HTTPS, SSRF, HMAC, ретраи |
 | `sendMessage` | ✅ | текст, `parse_mode`, `reply_markup` |
 | `editMessageText` | ✅ | редактирование своего сообщения |
 | `deleteMessage` | ✅ | удаление своего сообщения |
-| `sendPhoto` / `sendVideo` / `sendDocument` / `sendAudio` | `[~]` | требуют BotMediaStore |
-| `getFile` | `[~]` | следующая версия |
+| `sendPhoto` / `sendVideo` / `sendDocument` / `sendAudio` / `sendVoice` | ✅ | multipart или `file_id`, MIME, квоты |
+| `getFile` | ✅ | подписанная ссылка TTL 1 час |
 | `sendChatAction` | `[~]` | следующая версия |
 | `answerCallbackQuery` | ✅ | ответ на нажатие inline-кнопки |
 | `setMyCommands` / `getMyCommands` | ✅ | меню команд |
-| `banChatMember` / `restrictChatMember` | `[~]` | комнаты не включены |
+| `banChatMember` / `restrictChatMember` / `pinChatMessage` | `[~]` | права хранятся, методы следующие |
 
 `sendMessage`:
 
@@ -136,7 +139,7 @@ GET /getUpdates?offset=<update_id>&limit=100&timeout=30
 - Токены: HMAC для проверки + AES-256-GCM для показа, ротация, отзыв,
   audit без секрета (ADR-005).
 - Webhook: только HTTPS, запрет приватных IP (SSRF), проверка HMAC, pinning
-  по желанию — `[~]` в 1.2.0.
+  по желанию — включено; остаточное окно DNS rebinding описано в ADR-007.
 - Rate limits: 30 msg/s на бота, 1 msg/s в один чат, 20 запросов/мин на updates;
   `429 {"retry_after": N}`.
 - Файлы бота проходят тот же клиентский антивирус у получателя.
@@ -154,7 +157,7 @@ GET /getUpdates?offset=<update_id>&limit=100&timeout=30
 1. ✅ Модель ботов, токены, scopes, BotFather.
 2. ✅ `getMe`, `getUpdates`, `sendMessage`, `editMessageText`,
    `deleteMessage`, `setMyCommands`.
-3. `[~]` Webhook + подпись + ретраи.
-4. `[~]` Inline-клавиатуры (сервер принимает) и callback ✅, файлы `[~]`.
-5. `[~]` Каталог, модерация, rate limits ✅, аудит ✅.
+3. ✅ Webhook + подпись + ретраи + SSRF.
+4. ✅ Inline-клавиатуры (сервер принимает), callback, файлы.
+5. `[~]` Каталог, модерация; rate limits ✅, аудит ✅.
 6. `[~]` Первый официальный бот — **Enchat Bridge** (см. `docs/enchat-bridge.md`).

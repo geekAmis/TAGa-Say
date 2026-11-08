@@ -30,11 +30,17 @@ class BotUpdates(private val store: BotStore) {
         }
     }
 
-    suspend fun awaitInbox(user: String, since: Long, limit: Int, timeoutSeconds: Int): List<InboxEntry> {
+    suspend fun awaitInbox(
+        user: String,
+        since: Long,
+        limit: Int,
+        timeoutSeconds: Int,
+        roomAccess: Map<String, Long> = emptyMap(),
+    ): List<InboxEntry> {
         val safeLimit = limit.coerceIn(1, 100)
         val deadline = System.currentTimeMillis() + timeoutSeconds.coerceIn(0, 30) * 1_000L
         while (true) {
-            val batch = store.inbox(user, since, safeLimit)
+            val batch = store.inbox(user, since, safeLimit, roomAccess)
             if (batch.isNotEmpty()) return batch
             if (timeoutSeconds <= 0 || System.currentTimeMillis() >= deadline) return emptyList()
             delay(200)

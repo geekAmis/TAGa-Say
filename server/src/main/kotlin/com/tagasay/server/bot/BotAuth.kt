@@ -51,6 +51,20 @@ class BotSecrets(master: ByteArray) {
         String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), StandardCharsets.UTF_8)
     }.getOrNull()
 
+    /** Подпись короткоживущей ссылки на файл (TTL задаётся вызывающим). */
+    fun fileSignature(fileId: String, expiresAt: Long): String {
+        val hash = hmac("taga/file|$fileId|$expiresAt")
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(hash.copyOf(16))
+    }
+
+    fun verifyFileSignature(fileId: String, expiresAt: Long, signature: String): Boolean {
+        val expected = fileSignature(fileId, expiresAt)
+        return MessageDigest.isEqual(
+            expected.toByteArray(StandardCharsets.UTF_8),
+            signature.toByteArray(StandardCharsets.UTF_8),
+        )
+    }
+
     private fun hkdf(ikm: ByteArray, salt: ByteArray, info: String): ByteArray {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(salt, "HmacSHA256"))
@@ -126,6 +140,17 @@ class BotAuth(
             ?: return null
         return secrets.decrypt(token.tokenCiphertext)
     }
+
+    /** Шифрование webhook-секрета (AES-GCM под ключом токенов). */
+    fun encryptSecret(plain: String): String = secrets.encrypt(plain)
+
+    fun decryptSecret(ciphertext: String): String? = secrets.decrypt(ciphertext)
+
+    /** Подпись короткоживущей ссылки на файл. */
+    fun fileSignature(fileId: String, expiresAt: Long): String = secrets.fileSignature(fileId, expiresAt)
+
+    fun verifyFileSignature(fileId: String, expiresAt: Long, signature: String): Boolean =
+        secrets.verifyFileSignature(fileId, expiresAt, signature)
 
     /** Подпись callback_data BotFather: владелец|действие|botId (не доверяем кнопке). */
     fun callbackSignature(owner: String, action: String, botId: String): String {

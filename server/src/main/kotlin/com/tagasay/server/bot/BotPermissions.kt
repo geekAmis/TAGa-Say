@@ -26,16 +26,4 @@ object BotPermissions {
         val scope = requiredScope(method) ?: return true
         return bot.scopes.contains(scope)
     }
-
-    /**
-     * В 1.2.0 комнаты с ботами не включены: бот не может писать в g:/c:,
-     * пока его явно не добавили в комнату (stage 5). Возвращает null, если
-     * чат допустим, иначе текст ошибки.
-     */
-    fun chatDenied(bot: Bot, chatId: String): String? = when {
-        chatId.startsWith("u:") -> null
-        chatId.startsWith("g:") || chatId.startsWith("c:") ->
-            "bot rooms are not enabled in this release"
-        else -> "unsupported chat_id"
-    }
 }

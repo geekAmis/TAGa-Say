@@ -301,10 +301,10 @@ class BotApiTest {
             )
         }
 
-        val webhook = client.post("/bot/v1/setWebhook") {
+        val webhook = client.post("/bot/v1/getChat") {
             header("Authorization", "Bearer $token")
             contentType(ContentType.Application.Json)
-            setBody("""{"url":"https://bot.example/taga"}""")
+            setBody("""{"chat_id":"u:alice"}""")
         }
         assertEquals(HttpStatusCode.BadRequest, webhook.status)
         assertTrue(webhook.bodyAsText().contains("not supported"))

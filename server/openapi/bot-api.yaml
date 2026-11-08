@@ -6,7 +6,9 @@ info:
     Bot API v1 для платформы ботов TAGa-Say (релиз 1.4.0, сервер 1.2.0).
 
     Реализованы: getMe, getUpdates, sendMessage, editMessageText, deleteMessage,
-    getMyCommands, setMyCommands, deleteMyCommands, answerCallbackQuery.
+    getMyCommands, setMyCommands, deleteMyCommands, answerCallbackQuery,
+    sendPhoto/sendDocument/sendVoice/sendVideo/sendAudio, getFile,
+    подписанное скачивание файла, setWebhook/deleteWebhook/getWebhookInfo.
     Остальные методы возвращают 400 unsupported и помечены [~] в docs/bot-api.md.
     Бот-чаты не E2EE; бот не получает ключи, state, контакты и историю.
 servers:
@@ -284,6 +286,168 @@ paths:
                   result: { type: boolean }
         '400': { $ref: '#/components/responses/BotError' }
         '401': { $ref: '#/components/responses/BotError' }
+  /sendPhoto:
+    post:
+      summary: Отправить фото
+      operationId: sendPhoto
+      requestBody: { $ref: '#/components/requestBodies/SendFile' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMessage' }
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+        '403': { $ref: '#/components/responses/BotError' }
+        '413': { $ref: '#/components/responses/BotError' }
+        '415': { $ref: '#/components/responses/BotError' }
+        '429': { $ref: '#/components/responses/BotError' }
+  /sendDocument:
+    post:
+      summary: Отправить документ
+      operationId: sendDocument
+      requestBody: { $ref: '#/components/requestBodies/SendFile' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMessage' }
+        '400': { $ref: '#/components/responses/BotError' }
+        '413': { $ref: '#/components/responses/BotError' }
+        '415': { $ref: '#/components/responses/BotError' }
+        '429': { $ref: '#/components/responses/BotError' }
+  /sendVoice:
+    post:
+      summary: Отправить голосовое
+      operationId: sendVoice
+      requestBody: { $ref: '#/components/requestBodies/SendFile' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMessage' }
+        '400': { $ref: '#/components/responses/BotError' }
+        '413': { $ref: '#/components/responses/BotError' }
+        '415': { $ref: '#/components/responses/BotError' }
+  /sendVideo:
+    post:
+      summary: Отправить видео
+      operationId: sendVideo
+      requestBody: { $ref: '#/components/requestBodies/SendFile' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMessage' }
+        '400': { $ref: '#/components/responses/BotError' }
+        '413': { $ref: '#/components/responses/BotError' }
+        '415': { $ref: '#/components/responses/BotError' }
+  /sendAudio:
+    post:
+      summary: Отправить аудио
+      operationId: sendAudio
+      requestBody: { $ref: '#/components/requestBodies/SendFile' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMessage' }
+        '400': { $ref: '#/components/responses/BotError' }
+  /getFile:
+    get:
+      summary: Метаданные файла и подписанная ссылка
+      operationId: getFile
+      parameters:
+        - name: file_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Файл
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { $ref: '#/components/schemas/FileInfo' }
+        '401': { $ref: '#/components/responses/BotError' }
+        '404': { $ref: '#/components/responses/BotError' }
+    post:
+      summary: Метаданные файла (POST)
+      operationId: getFilePost
+      responses:
+        '200': { $ref: '#/components/responses/FileResult' }
+        '401': { $ref: '#/components/responses/BotError' }
+  /file/{fileId}:
+    get:
+      summary: Скачать файл по подписанной ссылке
+      operationId: downloadFile
+      security: []
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: expires
+          in: query
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: sig
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Байты файла (attachment, nosniff)
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/BotError' }
+  /setWebhook:
+    post:
+      summary: Включить webhook
+      operationId: setWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetWebhookRequest' }
+      responses:
+        '200':
+          description: Webhook установлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { type: boolean }
+        '400': { $ref: '#/components/responses/BotError' }
+        '401': { $ref: '#/components/responses/BotError' }
+  /deleteWebhook:
+    post:
+      summary: Удалить webhook
+      operationId: deleteWebhook
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                drop_pending_updates: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Webhook удалён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { type: boolean }
+        '401': { $ref: '#/components/responses/BotError' }
+  /getWebhookInfo:
+    get:
+      summary: Состояние webhook
+      operationId: getWebhookInfo
+      responses:
+        '200':
+          description: Информация о webhook
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  result: { $ref: '#/components/schemas/WebhookInfo' }
+        '401': { $ref: '#/components/responses/BotError' }
   /{method}:
     post:
       summary: Заглушка для нереализованных методов
@@ -305,7 +469,47 @@ components:
       type: http
       scheme: bearer
       description: 'taga_bot_<numericId>.<base64url-secret>'
+  requestBodies:
+    SendFile:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [chat_id]
+            properties:
+              chat_id: { type: string, example: 'u:alice' }
+              caption: { type: string, maxLength: 1024 }
+              parse_mode: { type: string, enum: [HTML, MarkdownV2] }
+              reply_to_message_id: { type: string }
+              reply_markup:
+                type: string
+                description: JSON-строка inline-клавиатуры
+              file:
+                type: string
+                format: binary
+                description: Поле photo/document/voice/video/audio (или file)
+        application/json:
+          schema: { $ref: '#/components/schemas/SendFileRequest' }
   responses:
+    FileResult:
+      description: Метаданные файла
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean }
+              result: { $ref: '#/components/schemas/FileInfo' }
+    FileMessage:
+      description: Сообщение с файлом
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean }
+              result: { $ref: '#/components/schemas/Message' }
     BotResult:
       description: Успех
       content:
@@ -393,12 +597,71 @@ components:
         chat: { $ref: '#/components/schemas/Chat' }
         from: { $ref: '#/components/schemas/User' }
         text: { type: string, nullable: true }
+        caption: { type: string, nullable: true }
         entities:
           type: array
           items: { $ref: '#/components/schemas/Entity' }
         reply_to_message_id: { type: string, nullable: true }
         edit_date: { type: integer, format: int64, nullable: true }
         reply_markup: { $ref: '#/components/schemas/InlineKeyboardMarkup' }
+        photo:
+          type: array
+          items: { $ref: '#/components/schemas/FileMeta' }
+        document: { $ref: '#/components/schemas/FileMeta' }
+        voice: { $ref: '#/components/schemas/FileMeta' }
+        video: { $ref: '#/components/schemas/FileMeta' }
+        audio: { $ref: '#/components/schemas/FileMeta' }
+    FileMeta:
+      type: object
+      required: [file_id, file_unique_id, file_size, mime_type]
+      properties:
+        file_id: { type: string }
+        file_unique_id: { type: string }
+        file_size: { type: integer, format: int64 }
+        mime_type: { type: string }
+        file_name: { type: string }
+    FileInfo:
+      allOf:
+        - $ref: '#/components/schemas/FileMeta'
+        - type: object
+          properties:
+            kind: { type: string, enum: [photo, document, voice, video, audio] }
+            file_url:
+              type: string
+              description: подписанная ссылка, TTL 1 час
+    SendFileRequest:
+      type: object
+      required: [chat_id]
+      properties:
+        chat_id: { type: string, example: 'u:alice' }
+        file_id: { type: string, description: ранее выданный file_id этого бота }
+        caption: { type: string, maxLength: 1024 }
+        parse_mode: { type: string, enum: [HTML, MarkdownV2] }
+        reply_to_message_id: { type: string }
+        reply_markup: { $ref: '#/components/schemas/InlineKeyboardMarkup' }
+    SetWebhookRequest:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, description: HTTPS, порт 443/8443, публичный хост }
+        secret_token: { type: string, maxLength: 256 }
+        allowed_updates:
+          type: array
+          items: { type: string }
+        drop_pending_updates: { type: boolean, default: false }
+        max_connections: { type: integer, minimum: 1, maximum: 10, default: 1 }
+    WebhookInfo:
+      type: object
+      properties:
+        url: { type: string }
+        has_custom_certificate: { type: boolean }
+        pending_update_count: { type: integer }
+        max_connections: { type: integer }
+        allowed_updates:
+          type: array
+          items: { type: string }
+        last_error_message: { type: string }
+        last_error_date: { type: integer, format: int64 }
     CallbackQuery:
       type: object
       required: [id, from, chat_instance, data]
@@ -414,7 +677,17 @@ components:
       properties:
         update_id: { type: integer, format: int64 }
         message: { $ref: '#/components/schemas/Message' }
+        channel_post: { $ref: '#/components/schemas/Message' }
         callback_query: { $ref: '#/components/schemas/CallbackQuery' }
+        my_chat_member:
+          type: object
+          description: бот добавлен/удалён/изменены права
+          properties:
+            chat: { $ref: '#/components/schemas/Chat' }
+            from: { $ref: '#/components/schemas/User' }
+            date: { type: integer, format: int64 }
+            old_chat_member: { type: object }
+            new_chat_member: { type: object }
     SendMessageRequest:
       type: object
       required: [chat_id, text]
