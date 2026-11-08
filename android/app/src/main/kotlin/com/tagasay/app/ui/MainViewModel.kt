@@ -1,4 +1,4 @@
-package com.tagasay.app.ui
+﻿package com.tagasay.app.ui
 
 import android.app.Application
 import android.net.Uri
@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.tagasay.app.TAGaSayApp
 import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.BotHubState
 import com.tagasay.app.data.model.Channel
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatFolder
@@ -50,6 +51,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val fingerprint = kotlinx.coroutines.flow.MutableStateFlow("")
     private val serverInfo = kotlinx.coroutines.flow.MutableStateFlow<ServerInfo?>(null)
+
+    private val _botHub = kotlinx.coroutines.flow.MutableStateFlow(BotHubState())
+    val botHub: StateFlow<BotHubState> = _botHub
+
+    private val _botNotice = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val botNotice: StateFlow<String?> = _botNotice
+
     private val serverAndUpdate = combine(serverInfo, updateManager.status) { info, update ->
         info to update
     }
@@ -87,9 +95,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .distinctUntilChanged()
                 .collectLatest { url -> serverMonitor.watch(url) }
         }
-        // Цикл синхронизации живёт в AppContainer и переживает пересоздание Activity.
+        // Р¦РёРєР» СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёРё Р¶РёРІС‘С‚ РІ AppContainer Рё РїРµСЂРµР¶РёРІР°РµС‚ РїРµСЂРµСЃРѕР·РґР°РЅРёРµ Activity.
         syncManager.start()
         updateManager.start()
+        viewModelScope.launch {
+            syncManager.botNotices.collect { text -> _botNotice.value = text }
+        }
         viewModelScope.launch {
             settingsStore.settings
                 .map { it.onboarded }
@@ -123,8 +134,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             val serverUrl = settingsStore.settings.first().serverUrl
-            // Verifier сохраняется до onboarded=true, чтобы фоновый sync не
-            // опередил онбординг и не упал с «Password is required».
+            // Verifier СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ РґРѕ onboarded=true, С‡С‚РѕР±С‹ С„РѕРЅРѕРІС‹Р№ sync РЅРµ
+            // РѕРїРµСЂРµРґРёР» РѕРЅР±РѕСЂРґРёРЅРі Рё РЅРµ СѓРїР°Р» СЃ В«Password is requiredВ».
             withContext(Dispatchers.IO) {
                 runCatching { container.accountManager.rememberPassword(serverUrl, username, password) }
                     .onFailure { Log.w("TAGaSync", "rememberPassword failed", it) }
@@ -158,6 +169,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         poll: Poll? = null,
     ) {
         if (text.isBlank() && attachment == null && sticker == null && poll == null) return
+        val chat = repository.chat(chatId) ?: return
+        if (kind == MessageKind.SYSTEM || kind == MessageKind.CALL) return
+
+        // Р‘РѕС‚-С‡Р°С‚С‹: РѕС‚РґРµР»СЊРЅС‹Р№ РїСѓС‚СЊ, Р±РµР· E2EE Рё Р±РµР· РєРѕРЅРІРµСЂС‚РѕРІ.
+        if (chat.type == ChatType.BOT) {
+            if (attachment != null || sticker != null || poll != null) {
+                _botNotice.value = "Р‘РѕС‚С‹ РїРѕРєР° РїСЂРёРЅРёРјР°СЋС‚ С‚РѕР»СЊРєРѕ С‚РµРєСЃС‚"
+                return
+            }
+            viewModelScope.launch(Dispatchers.IO) {
+                val bots = syncManager.awaitBotSync()
+                if (bots == null) {
+                    val failed = repository.sendMessage(chatId, text, replyToId = replyToId)
+                    repository.setMessageStatus(chatId, failed.id, MessageStatus.FAILED)
+                    _botNotice.value = "РќРµС‚ СЃРІСЏР·Рё СЃ СЃРµСЂРІРµСЂРѕРј"
+                    return@launch
+                }
+                bots.sendText(chatId, text, replyToId)
+            }
+            return
+        }
+
         val message = repository.sendMessage(
             chatId = chatId,
             text = text,
@@ -168,12 +201,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             replyToId = replyToId,
             poll = poll,
         )
-        val chat = repository.chat(chatId) ?: return
-        if (kind == MessageKind.SYSTEM || kind == MessageKind.CALL) return
         if (chat.type != ChatType.PRIVATE) {
             if (chat.type == ChatType.CHANNEL && !canPostToChannel(chat)) return
             if (attachment != null) {
-                // Медиа в группах — следующий шаг; не отправляем пустой текст.
+                // РњРµРґРёР° РІ РіСЂСѓРїРїР°С… вЂ” СЃР»РµРґСѓСЋС‰РёР№ С€Р°Рі; РЅРµ РѕС‚РїСЂР°РІР»СЏРµРј РїСѓСЃС‚РѕР№ С‚РµРєСЃС‚.
                 repository.setMessageStatus(chatId, message.id, MessageStatus.FAILED)
                 return
             }
@@ -184,7 +215,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val senderName = runCatching { settingsStore.settings.first().displayName }
                     .getOrDefault("")
-                    .ifBlank { "Вы" }
+                    .ifBlank { "Р’С‹" }
                 val result = sync.sendRoom(
                     chatId = chatId,
                     messageId = message.id,
@@ -214,7 +245,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 attachment != null -> {
                     val source = attachment.localUri?.let(Uri::parse)
                     if (source == null) {
-                        Result.failure(IllegalArgumentException("У вложения нет локального файла"))
+                        Result.failure(IllegalArgumentException("РЈ РІР»РѕР¶РµРЅРёСЏ РЅРµС‚ Р»РѕРєР°Р»СЊРЅРѕРіРѕ С„Р°Р№Р»Р°"))
                     } else {
                         sync.sendAttachment(
                             chatId = chatId,
@@ -259,7 +290,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Скачивает и расшифровывает вложение полученного сообщения.
+     * РЎРєР°С‡РёРІР°РµС‚ Рё СЂР°СЃС€РёС„СЂРѕРІС‹РІР°РµС‚ РІР»РѕР¶РµРЅРёРµ РїРѕР»СѓС‡РµРЅРЅРѕРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ.
      */
     fun downloadAttachment(chatId: String, messageId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -299,7 +330,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun forwardMessage(sourceChatId: String, messageId: String, targetChatId: String) {
-        val sourceTitle = repository.chat(sourceChatId)?.title ?: "чат"
+        val sourceTitle = repository.chat(sourceChatId)?.title ?: "С‡Р°С‚"
         val forwarded = repository.forwardMessage(sourceChatId, messageId, targetChatId) ?: return
         if (repository.chat(targetChatId)?.type != ChatType.PRIVATE) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -322,6 +353,92 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun ensureDirectChat(username: String, displayName: String, avatarColor: Long): String =
         repository.ensureDirectChat(username, displayName, avatarColor)
+
+    // ------------------------------------------------------------------- bots
+
+    fun clearBotNotice() {
+        _botNotice.value = null
+    }
+
+    /** РћС‚РєСЂС‹РІР°РµС‚ Р±РѕС‚-С‡Р°С‚ (СЃРѕР·РґР°С‘С‚ Р»РѕРєР°Р»СЊРЅРѕ Рё С€Р»С‘С‚ /start РїСЂРё РїРµСЂРІРѕРј РєРѕРЅС‚Р°РєС‚Рµ). */
+    fun openBotChat(username: String, onReady: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var chatId: String? = null
+            val botSync = syncManager.awaitBotSync()
+            if (botSync != null) {
+                botSync.openBot(username)
+                    .onSuccess { chatId = it }
+                    .onFailure {
+                        Log.w("TAGaBots", "open bot failed: ${it.message}")
+                        _botNotice.value = it.message ?: "Р‘РѕС‚ РЅРµРґРѕСЃС‚СѓРїРµРЅ"
+                    }
+            }
+            if (chatId == null) {
+                val cached = repository.botInfo(username)
+                if (cached != null) {
+                    chatId = repository.ensureBotChat(username, cached)
+                } else {
+                    _botNotice.value = "Р‘РѕС‚ РЅРµ РЅР°Р№РґРµРЅ"
+                    return@launch
+                }
+            }
+            chatId?.let { id ->
+                withContext(Dispatchers.Main) { onReady(id) }
+            }
+        }
+    }
+
+    fun openBotFather(onReady: (String) -> Unit) = openBotChat("botfather", onReady)
+
+    fun botCallback(chatId: String, messageId: String, data: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            syncManager.awaitBotSync()?.clickCallback(chatId, messageId, data)
+        }
+    }
+
+    fun toggleBotBlocked(chatId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val chat = repository.chat(chatId) ?: return@launch
+            val blocked = repository.botInfo(chat.username)?.blocked == true
+            syncManager.awaitBotSync()?.setBlocked(chatId, !blocked)
+        }
+    }
+
+    fun markBotWarningShown(username: String) {
+        repository.markBotWarningShown(username)
+    }
+
+    /** РљР°С‚Р°Р»РѕРі Р±РѕС‚РѕРІ + В«РјРѕРё Р±РѕС‚С‹В». РџСѓСЃС‚РѕР№ query вЂ” РЅР°С‡Р°Р»СЊРЅР°СЏ РІС‹РґР°С‡Р° СЃРµСЂРІРµСЂР°. */
+    fun refreshBots(query: String = "") {
+        _botHub.value = _botHub.value.copy(loading = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = container.accountManager.currentSession()
+            if (session == null) {
+                _botHub.value = _botHub.value.copy(loading = false, error = "РќРµС‚ СЃРµСЃСЃРёРё")
+                return@launch
+            }
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching {
+                val catalog = api.bots(query).filter { it.username.isNotBlank() }
+                val mine = api.myBots().filter { it.username.isNotBlank() }
+                catalog to mine
+            }.onSuccess { (catalog, mine) ->
+                mine.forEach { repository.saveBotInfo(it) }
+                _botHub.value = BotHubState(
+                    catalog = catalog,
+                    mine = mine,
+                    loading = false,
+                    error = null,
+                )
+            }.onFailure { error ->
+                Log.w("TAGaBots", "bots catalog failed: ${error.message}")
+                _botHub.value = _botHub.value.copy(
+                    loading = false,
+                    error = error.message ?: "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р±РѕС‚РѕРІ",
+                )
+            }
+        }
+    }
 
     fun createChannel(title: String, username: String, description: String): Channel {
         val channel = repository.createChannel(title, username, description)
@@ -593,3 +710,4 @@ private suspend fun com.tagasay.app.data.local.SettingsStore.settingsValue(): Ap
     settings.first()
 
 private const val SERVER_INFO_INTERVAL_MS = 10 * 60 * 1000L
+

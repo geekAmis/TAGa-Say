@@ -3,6 +3,29 @@
 Все заметные изменения проекта. Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.4.0] — 2026-11-08
+
+Клиентская часть платформы ботов (BotFather и Bot API).
+
+### Добавлено
+- `ChatType.BOT`, модели `BotInfo`, `BotMessage`, `BotUpdate`, entities и
+  inline-клавиатуры с контрактными unit-тестами.
+- `TagaApi`: каталог/карточка/«мои боты», `send`, long-poll `inbox`,
+  callback, block/unblock, token/revoke/update/delete. Общий `OkHttpClient`
+  вынесен в `RelayHttp` (один пул соединений на приложение).
+- `BotSync`: оптимистичная отправка с `client_msg_id`, приём inbox,
+  дедупликация по `message_id`, курсор `since`, tombstone-сообщения.
+- Бот-чат в UI: бейдж «бот» в списке, шапка «бот · не E2EE», одноразовое
+  предупреждение, текст с entities, inline-кнопки (callback/url), блокировка.
+- Экран «Боты» (Настройки → Боты и поиск): BotFather, мои боты, каталог.
+- `@BotFather` работает как обычный бот-чат; доступные команды — из карточки,
+  нереализованные сервером команды помечены «скоро» и отключены.
+
+### Изменено
+- `versionCode 9`, версия `1.4.0`.
+
+[1.4.0]: https://github.com/geekAmis/TAGa-Say/releases/tag/v1.4.0
+
 ## [1.3.0] — 2026-11-08
 
 Группы и каналы с серверной доставкой.
