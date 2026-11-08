@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -36,6 +37,7 @@ import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.UiState
 import com.tagasay.app.data.model.UpdateStatus
+import com.tagasay.app.ui.components.Avatar
 import com.tagasay.app.ui.components.ServerBanner
 import com.tagasay.app.ui.screens.CallScreen
 import com.tagasay.app.ui.screens.CallsScreen
@@ -157,7 +159,13 @@ private fun MainNavHost(
                             selected = currentRoute == tab.route,
                             onClick = { navController.navigateToTab(tab.route) },
                             icon = {
-                                if (tab.route == "chats" && unread > 0) {
+                                if (tab.route == "profile") {
+                                    Avatar(
+                                        name = settings.displayName.ifBlank { "Вы" },
+                                        color = vault.profile.avatarColor,
+                                        size = 26.dp,
+                                    )
+                                } else if (tab.route == "chats" && unread > 0) {
                                     BadgedBox(badge = { Badge { Text(unread.toString()) } }) {
                                         Icon(tab.icon, contentDescription = tab.label)
                                     }

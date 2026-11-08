@@ -216,7 +216,7 @@ fun ChatsScreen(
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 96.dp),
                 ) {
                     items(filtered, key = { it.id }) { chat ->
-                        ChatRow(chat = chat, onClick = { onOpenChat(chat.id) })
+                        ChatRow(chat = chat, folders = folders, onClick = { onOpenChat(chat.id) })
                     }
                 }
             }
@@ -285,7 +285,8 @@ private fun FolderChip(
 }
 
 @Composable
-private fun ChatRow(chat: Chat, onClick: () -> Unit) {
+private fun ChatRow(chat: Chat, folders: List<ChatFolder>, onClick: () -> Unit) {
+    val folderTag = folders.firstOrNull { it.types.isNotEmpty() && chat.inFolder(it) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -320,6 +321,21 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                }
+                if (folderTag != null) {
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        listOf(folderTag.emoji, folderTag.title)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
                             .padding(horizontal = 5.dp, vertical = 1.dp),
                     )
                 }
