@@ -14,6 +14,7 @@ import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
 import com.tagasay.core.crypto.CryptoEngine
 import com.tagasay.core.crypto.MessageFraming
+import kotlinx.coroutines.CancellationException
 import java.util.UUID
 
 /**
@@ -34,6 +35,7 @@ class ChatSync(
 ) {
 
     private val roomCache = mutableMapOf<String, GroupRoom>()
+    private val deniedRooms = mutableSetOf<String>()
 
     // --------------------------------------------------------------- outgoing
 
@@ -306,6 +308,7 @@ class ChatSync(
         val envelopes = api.fetchEnvelopes()
         if (envelopes.isEmpty()) return 0
         roomCache.clear()
+        deniedRooms.clear()
         var received = 0
         val ackIds = mutableListOf<String>()
         val delivered = linkedMapOf<String, MutableList<String>>()
@@ -313,6 +316,8 @@ class ChatSync(
         for (envelope in envelopes) {
             val sender = try {
                 resolveSender(envelope)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (transient: Exception) {
                 Log.w("TAGaSync", "sealed sender check failed transiently: ${transient.message}")
                 // Не ack: повторим на следующем poll.
@@ -337,6 +342,8 @@ class ChatSync(
                     if (wire != null) {
                         val created = try {
                             handleWire(sender, wire)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
                         } catch (transient: Exception) {
                             Log.w("TAGaSync", "wire handling failed transiently: ${transient.message}")
                             // Не ack: сообщение повторится.
@@ -389,14 +396,18 @@ class ChatSync(
         if (roomId.isBlank()) return false
         // Авторитетная проверка: комната существует на сервере, отправитель —
         // участник, а в канал пишет только владелец/админ.
-        val room = roomCache[roomId] ?: try {
-            api.room(roomId).also { roomCache[roomId] = it }
-        } catch (apiError: ApiException) {
-            if (apiError.status in 400..499) {
-                Log.w("TAGaSync", "drop room wire: room inaccessible")
-                return false
+        val room = roomCache[roomId] ?: run {
+            if (roomId in deniedRooms) return false
+            try {
+                api.room(roomId).also { roomCache[roomId] = it }
+            } catch (apiError: ApiException) {
+                if (apiError.status == 403 || apiError.status == 404) {
+                    deniedRooms += roomId
+                    Log.w("TAGaSync", "drop room wire: room inaccessible")
+                    return false
+                }
+                throw apiError
             }
-            throw apiError
         }
         val senderIsAdmin = room.owner.equals(sender, true) ||
             room.admins.any { it.equals(sender, true) }
@@ -620,6 +631,11 @@ class ChatSync(
         if (!authoritative.contentEquals(data.identityKey)) {
             Log.w("TAGaSync", "sealed sender identity mismatch")
             return null
+        }
+        if (known == null) {
+            // Закрепляем ключ из directory до decryptFrom, иначе libsignal
+            // примет любой identity при первом контакте (TOFU).
+            messenger.pinIdentity(data.username, authoritative)
         }
         return data.username
     }

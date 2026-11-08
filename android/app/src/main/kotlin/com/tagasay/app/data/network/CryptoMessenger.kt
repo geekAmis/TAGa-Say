@@ -61,6 +61,13 @@ class CryptoMessenger(
         return byteArrayOf(ciphertext.type.toByte()) + ciphertext.serialize()
     }
 
+    /** Закрепляет авторитетный identity-ключ до расшифровки первого конверта. */
+    fun pinIdentity(username: String, identityKey: ByteArray) {
+        val clean = username.trimStart('@').lowercase()
+        store.saveIdentity(address(clean), IdentityKey(identityKey))
+        identityCache[clean] = identityKey
+    }
+
     suspend fun decryptFrom(sender: String, payload: ByteArray): ByteArray {
         require(payload.size > 1) { "empty signal message" }
         val type = payload[0].toInt()
