@@ -41,6 +41,10 @@ fun Route.roomRoutes(store: InMemoryStore) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("invalid username", "BAD_REQUEST"))
             return@post
         }
+        if (store.deviceByUsername(username) != null) {
+            call.respond(HttpStatusCode.Conflict, ErrorResponse("username belongs to a user", "CONFLICT"))
+            return@post
+        }
         val members = request.members
             .map { it.trimStart('@').lowercase() }
             .filter { it.isNotBlank() && store.deviceByUsername(it) != null }
@@ -71,14 +75,19 @@ fun Route.roomRoutes(store: InMemoryStore) {
             return@get
         }
         val query = call.request.queryParameters["query"].orEmpty().trim()
+        val me = authed.device.username
         val rooms = if (query.isBlank()) {
-            store.roomsFor(authed.device.username)
+            store.roomsFor(me)
         } else {
-            (store.roomsFor(authed.device.username) + store.searchRooms(query))
+            (store.roomsFor(me) + store.searchRooms(query))
                 .distinctBy { it.id }
                 .take(50)
         }
-        call.respond(rooms)
+        call.respond(
+            rooms.map { room ->
+                if (room.hasMember(me)) room else room.publicView()
+            },
+        )
     }
 
     get("/v1/rooms/{id}") {
@@ -93,7 +102,9 @@ fun Route.roomRoutes(store: InMemoryStore) {
             call.respond(HttpStatusCode.Forbidden, ErrorResponse("not a member", "FORBIDDEN"))
             return@get
         }
-        call.respond(room)
+        call.respond(
+            if (room.hasMember(authed.device.username)) room else room.publicView(),
+        )
     }
 
     post("/v1/rooms/{id}/join") {
@@ -162,3 +173,10 @@ fun Route.roomRoutes(store: InMemoryStore) {
 
 private fun Room.hasMember(username: String): Boolean =
     owner.equals(username, true) || members.any { it.equals(username, true) }
+
+/** Публичная карточка канала: без списка участников и владельца. */
+private fun Room.publicView(): Room = copy(
+    owner = "",
+    admins = emptyList(),
+    members = emptyList(),
+)

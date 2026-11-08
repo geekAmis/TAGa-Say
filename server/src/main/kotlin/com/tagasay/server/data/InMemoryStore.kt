@@ -169,6 +169,7 @@ class InMemoryStore(private val persistPath: String? = null) {
     fun searchRooms(username: String): List<Room> {
         val clean = username.lowercase()
         return rooms.values
+            .filter { it.channel }
             .filter {
                 it.username.contains(clean, true) || it.title.contains(clean, true)
             }
@@ -237,7 +238,14 @@ class InMemoryStore(private val persistPath: String? = null) {
         } else {
             (room.members + cleanTarget).distinct()
         }
-        val next = room.copy(members = members)
+        val next = room.copy(
+            members = members,
+            admins = if (remove) {
+                room.admins.filterNot { it.equals(cleanTarget, true) }
+            } else {
+                room.admins
+            },
+        )
         rooms[id] = next
         persist()
         next

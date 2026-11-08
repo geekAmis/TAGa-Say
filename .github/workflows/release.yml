@@ -65,10 +65,16 @@ jobs:
           } > keystore.properties
 
       - name: Unit tests
-        run: ./gradlew :core:crypto:testDebugUnitTest --stacktrace
+        run: ./gradlew :core:crypto:testDebugUnitTest :app:testDebugUnitTest --stacktrace
 
       - name: Build release APK and AAB
         run: ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Server tests
+        working-directory: server
+        run: |
+          chmod +x gradlew
+          ./gradlew test --stacktrace
 
       - name: Build server distribution
         working-directory: server

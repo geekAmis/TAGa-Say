@@ -102,6 +102,10 @@ class SyncManager(
                     if (ticks % STATE_PUSH_EVERY_POLLS == 0) {
                         stateSync.pushIfChanged(api, session)
                     }
+                    if (ticks % ROOM_REFRESH_EVERY_POLLS == 0) {
+                        runCatching { api.rooms().forEach { repository.applyRoom(it) } }
+                            .onFailure { Log.w("TAGaSync", "rooms refresh failed: ${it.message}") }
+                    }
                     ticks++
                     delay(POLL_INTERVAL_MS)
                 }
@@ -122,6 +126,7 @@ class SyncManager(
     private companion object {
         const val POLL_INTERVAL_MS = 3_000L
         const val STATE_PUSH_EVERY_POLLS = 5
+        const val ROOM_REFRESH_EVERY_POLLS = 10
         const val MAX_BACKOFF_SECONDS = 30L
     }
 }

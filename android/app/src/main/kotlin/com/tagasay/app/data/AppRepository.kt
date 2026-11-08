@@ -729,7 +729,8 @@ class AppRepository(private val store: VaultStore) {
     fun createRoomChat(room: com.tagasay.app.data.model.GroupRoom): Chat {
         val existing = _vault.value.chats.firstOrNull {
             it.roomId == room.id || it.id == room.id ||
-                it.username.equals(room.username, ignoreCase = true)
+                (it.type != ChatType.PRIVATE &&
+                    it.username.equals(room.username, ignoreCase = true))
         }
         if (existing != null) return existing
         val chat = Chat(
@@ -754,7 +755,8 @@ class AppRepository(private val store: VaultStore) {
         updateVault { data ->
             val exists = data.chats.any {
                 it.roomId == room.id || it.id == room.id ||
-                    it.username.equals(room.username, ignoreCase = true)
+                    (it.type != ChatType.PRIVATE &&
+                        it.username.equals(room.username, ignoreCase = true))
             }
             if (!exists) {
                 val chat = Chat(
@@ -778,7 +780,8 @@ class AppRepository(private val store: VaultStore) {
                 data.copy(
                     chats = data.chats.map { chat ->
                         if (chat.roomId == room.id || chat.id == room.id ||
-                            chat.username.equals(room.username, ignoreCase = true)
+                            (chat.type != ChatType.PRIVATE &&
+                                chat.username.equals(room.username, ignoreCase = true))
                         ) {
                             chat.copy(
                                 title = room.title,
@@ -800,9 +803,11 @@ class AppRepository(private val store: VaultStore) {
 
     fun removeRoomChat(roomId: String) {
         updateVault { data ->
+            val chat = data.chats.firstOrNull { it.roomId == roomId || it.id == roomId }
+            val ids = listOfNotNull(roomId, chat?.id).toSet()
             data.copy(
-                chats = data.chats.filterNot { it.roomId == roomId },
-                messages = data.messages - roomId,
+                chats = data.chats.filterNot { it.roomId == roomId || it.id == roomId },
+                messages = data.messages.filterKeys { it !in ids },
             )
         }
     }

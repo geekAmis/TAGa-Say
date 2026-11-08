@@ -103,6 +103,33 @@ class RoomRoutesTest {
     }
 
     @Test
+    fun privateGroupIsNotSearchableAndUsernameCollisionIsRejected() = testApplication {
+        val store = InMemoryStore()
+        val alice = runBlocking { register(store, "alice2") }
+        val bob = runBlocking { register(store, "bob2") }
+        application { module(store = store, updateStore = UpdateStore("missing", null, null)) }
+
+        val created = client.post("/v1/rooms") {
+            header("Authorization", "Bearer $alice")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"Secret Room","username":"secretroom"}""")
+        }
+        assertEquals(HttpStatusCode.Created, created.status)
+
+        val search = client.get("/v1/rooms?query=secret") {
+            header("Authorization", "Bearer $bob")
+        }
+        assertTrue(!search.bodyAsText().contains("Secret Room"))
+
+        val collision = client.post("/v1/rooms") {
+            header("Authorization", "Bearer $alice")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"Fake User","username":"bob2"}""")
+        }
+        assertEquals(HttpStatusCode.Conflict, collision.status)
+    }
+
+    @Test
     fun channelCanBeJoinedAndReadBySubscriber() = testApplication {
         val store = InMemoryStore()
         val owner = runBlocking { register(store, "owner") }

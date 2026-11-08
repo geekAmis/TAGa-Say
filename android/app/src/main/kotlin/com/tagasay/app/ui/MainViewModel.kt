@@ -22,6 +22,7 @@ import com.tagasay.app.data.model.UiState
 import com.tagasay.app.data.network.TagaApi
 import com.tagasay.app.data.network.TwoFactorSetupResponse
 import com.tagasay.app.data.network.CreateRoomRequest
+import com.tagasay.app.data.network.toWire
 import com.tagasay.app.sync.SyncService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -194,6 +195,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     replyToId = replyToId,
                     replyToText = replyToText,
                     senderName = senderName,
+                    poll = poll?.toWire(),
                 )
                 repository.setMessageStatus(
                     chatId,
@@ -400,8 +402,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val roomId = chat.roomId ?: return@launch
             val session = container.accountManager.currentSession() ?: return@launch
             val api = TagaApi(session.serverUrl, session.accessToken)
-            runCatching { api.leaveRoom(roomId) }
-            repository.removeRoomChat(roomId)
+            val result = runCatching { api.leaveRoom(roomId) }
+            if (result.isSuccess) {
+                repository.removeRoomChat(roomId)
+            } else {
+                Log.w("TAGaRooms", "leave room failed: ${result.exceptionOrNull()?.message}")
+            }
         }
     }
 
