@@ -39,6 +39,14 @@ class StateCryptoTest {
     }
 
     @Test
+    fun stateHashIgnoresUpdatedAt() {
+        val json = kotlinx.serialization.json.Json { encodeDefaults = true }
+        val first = SyncedState(updatedAt = 1, settings = com.tagasay.app.data.model.AppSettings())
+        val second = SyncedState(updatedAt = 999_999, settings = com.tagasay.app.data.model.AppSettings())
+        assertTrue(StateHash.of(crypto, json, first) == StateHash.of(crypto, json, second))
+    }
+
+    @Test
     fun serverWithPasswordVerifierCannotDecryptV2() {
         val plaintext = """{"contacts":[{"username":"alice"}]}""".encodeToByteArray()
         val payload = StateCrypto.encryptV2(crypto, master, "alice", plaintext)

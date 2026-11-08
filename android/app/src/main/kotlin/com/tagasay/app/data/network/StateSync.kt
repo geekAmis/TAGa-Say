@@ -83,9 +83,7 @@ class StateSync(
         val state = buildState()
         // Хешируем содержимое без updatedAt, иначе timestamp делает hash
         // нестабильным и состояние уходит на сервер каждые 15 секунд.
-        val content = state.copy(updatedAt = 0)
-        val contentPlaintext = json.encodeToString(SyncedState.serializer(), content).encodeToByteArray()
-        val hash = crypto.sha256Hex(contentPlaintext)
+        val hash = StateHash.of(crypto, json, state)
         if (hash == prefs.getString(KEY_HASH, null) &&
             prefs.getString(KEY_FORMAT, null) == "v2"
         ) {

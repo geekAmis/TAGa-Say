@@ -33,6 +33,8 @@ class ChatSync(
     private val crypto: CryptoEngine,
 ) {
 
+    private val roomCache = mutableMapOf<String, GroupRoom>()
+
     // --------------------------------------------------------------- outgoing
 
     suspend fun send(
@@ -303,12 +305,19 @@ class ChatSync(
     suspend fun poll(): Int {
         val envelopes = api.fetchEnvelopes()
         if (envelopes.isEmpty()) return 0
+        roomCache.clear()
         var received = 0
         val ackIds = mutableListOf<String>()
         val delivered = linkedMapOf<String, MutableList<String>>()
 
         for (envelope in envelopes) {
-            val sender = resolveSender(envelope)
+            val sender = try {
+                resolveSender(envelope)
+            } catch (transient: Exception) {
+                Log.w("TAGaSync", "sealed sender check failed transiently: ${transient.message}")
+                // Не ack: повторим на следующем poll.
+                continue
+            }
             if (sender == null) {
                 Log.w("TAGaSync", "skip envelope ${envelope.id}: unreadable sealed sender")
                 ackIds += envelope.id
@@ -326,7 +335,13 @@ class ChatSync(
                 if (plaintext != null) {
                     val wire = WireCodec.decode(plaintext)
                     if (wire != null) {
-                        val created = handleWire(sender, wire)
+                        val created = try {
+                            handleWire(sender, wire)
+                        } catch (transient: Exception) {
+                            Log.w("TAGaSync", "wire handling failed transiently: ${transient.message}")
+                            // Не ack: сообщение повторится.
+                            continue
+                        }
                         if (created) {
                             received++
                             if (wire.type == WireMessage.TYPE_TEXT || wire.type == WireMessage.TYPE_MEDIA) {
@@ -374,9 +389,14 @@ class ChatSync(
         if (roomId.isBlank()) return false
         // Авторитетная проверка: комната существует на сервере, отправитель —
         // участник, а в канал пишет только владелец/админ.
-        val room = runCatching { api.room(roomId) }.getOrNull() ?: run {
-            Log.w("TAGaSync", "drop room wire: unknown or inaccessible room")
-            return false
+        val room = roomCache[roomId] ?: try {
+            api.room(roomId).also { roomCache[roomId] = it }
+        } catch (apiError: ApiException) {
+            if (apiError.status in 400..499) {
+                Log.w("TAGaSync", "drop room wire: room inaccessible")
+                return false
+            }
+            throw apiError
         }
         val senderIsAdmin = room.owner.equals(sender, true) ||
             room.admins.any { it.equals(sender, true) }
@@ -573,7 +593,7 @@ class ChatSync(
      * Username отправителя: из sealed sender (предпочтительно) или из
      * legacy-поля sender. null — конверт нельзя безопасно обработать.
      */
-    private fun resolveSender(envelope: EnvelopeDto): String? {
+    private suspend fun resolveSender(envelope: EnvelopeDto): String? {
         if (envelope.sealedSender.isBlank()) {
             return envelope.sender.takeIf { it.isNotBlank() }
         }
@@ -584,8 +604,21 @@ class ChatSync(
             crypto = crypto,
         ) ?: return null
         val known = messenger.knownIdentity(data.username)
-        if (known != null && !known.contentEquals(data.identityKey)) {
-            Log.w("TAGaSync", "sealed sender identity changed for ${data.username}")
+        val authoritative = if (known != null) {
+            known
+        } else {
+            // Первый контакт: нельзя доверять identityKey из конверта.
+            // Берём ключ из directory; сетевую ошибку пробрасываем, чтобы
+            // не подтверждать (ack) конверт и повторить на следующем poll.
+            try {
+                messenger.recipientIdentity(data.username)
+            } catch (notFound: ApiException) {
+                if (notFound.status == 404) return null
+                throw notFound
+            }
+        }
+        if (!authoritative.contentEquals(data.identityKey)) {
+            Log.w("TAGaSync", "sealed sender identity mismatch")
             return null
         }
         return data.username
