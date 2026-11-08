@@ -88,13 +88,16 @@ class StateSync(
         ) {
             return@runCatching false
         }
+        val now = System.currentTimeMillis()
+        val toSend = state.copy(updatedAt = now)
+        val sendPlaintext = json.encodeToString(SyncedState.serializer(), toSend).encodeToByteArray()
         val ciphertext = Base64.getEncoder().encodeToString(
-            StateCrypto.encryptV2(crypto, masterKey(session), session.username, plaintext),
+            StateCrypto.encryptV2(crypto, masterKey(session), session.username, sendPlaintext),
         )
-        val saved = api.putState(ciphertext, state.updatedAt)
+        val saved = api.putState(ciphertext, now)
         prefs.edit()
             .putLong(KEY_VERSION, saved.version)
-            .putLong(KEY_UPDATED_AT, state.updatedAt)
+            .putLong(KEY_UPDATED_AT, now)
             .putString(KEY_HASH, hash)
             .putString(KEY_FORMAT, "v2")
             .apply()
@@ -108,7 +111,7 @@ class StateSync(
         val vault = repository.vault.value
         val settings = settingsStore.settings.first()
         return SyncedState(
-            updatedAt = System.currentTimeMillis(),
+            updatedAt = prefs.getLong(KEY_UPDATED_AT, 0),
             profile = vault.profile,
             settings = settings,
             folders = vault.chatFolders,

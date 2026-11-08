@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Forward
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Lock
@@ -148,6 +149,7 @@ fun ChatScreen(
     onOpenProfile: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMedia: () -> Unit,
+    onOpenMembers: () -> Unit,
     onCall: () -> Unit,
     onSend: (String, MessageKind, Attachment?, String?, String?, String?, Poll?) -> Unit,
     onEdit: (String, String) -> Unit,
@@ -176,6 +178,10 @@ fun ChatScreen(
     val requestedDownloads = remember(chat.id) { mutableSetOf<String>() }
     val palette = chatPalette(settings.chatTheme, settings.chatWallpaper, settings.darkTheme)
     val textSize = settings.messageTextSize.sp
+    val canPost = chat.type != ChatType.CHANNEL ||
+        chat.ownerUsername.isBlank() ||
+        chat.ownerUsername.equals(settings.username, ignoreCase = true) ||
+        chat.admins.any { it.equals(settings.username, ignoreCase = true) }
 
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
@@ -282,6 +288,17 @@ fun ChatScreen(
                             onClick = { showMenu = false; onOpenMedia() },
                             leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) },
                         )
+                        if (chat.type == ChatType.GROUP || chat.type == ChatType.CHANNEL) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (chat.type == ChatType.CHANNEL) "Подписчики" else "Участники",
+                                    )
+                                },
+                                onClick = { showMenu = false; onOpenMembers() },
+                                leadingIcon = { Icon(Icons.Filled.Groups, contentDescription = null) },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Настройки чата") },
                             onClick = { showMenu = false; onOpenSettings() },
@@ -374,9 +391,14 @@ fun ChatScreen(
                                 input = it
                                 if (it.isNotEmpty() && editing == null) replying = replying
                             },
+                            enabled = canPost,
                             placeholder = {
                                 Text(
-                                    if (chat.type == ChatType.CHANNEL) "Написать в канал" else "Сообщение",
+                                    when {
+                                        !canPost -> "Только администраторы могут писать"
+                                        chat.type == ChatType.CHANNEL -> "Написать в канал"
+                                        else -> "Сообщение"
+                                    },
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             },
@@ -417,6 +439,7 @@ fun ChatScreen(
                                         else -> picker.launch("image/*")
                                     }
                                 },
+                                enabled = canPost,
                             ) {
                                 Icon(
                                     if (input.isBlank() && editing == null) {

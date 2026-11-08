@@ -8,6 +8,7 @@ import com.tagasay.app.data.crypto.SealedSender
 import com.tagasay.app.data.model.Attachment
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.GroupRoom
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
@@ -143,6 +144,83 @@ class ChatSync(
             sendWire(chat, wire)
         }
 
+    /**
+     * Отправляет сообщение группы/канала каждому участнику отдельным
+     * E2EE-конвертом. Сервер видит только список получателей и ciphertext.
+     */
+    suspend fun sendRoom(
+        chatId: String,
+        messageId: String,
+        text: String,
+        kind: MessageKind,
+        sticker: String?,
+        replyToId: String?,
+        replyToText: String?,
+        senderName: String,
+    ): Result<Unit> = runCatching {
+        val chat = repository.chat(chatId) ?: error("chat not found")
+        val roomId = chat.roomId ?: chat.id
+        val peers = chat.members
+            .map { it.trimStart('@').lowercase() }
+            .filter { it.isNotBlank() && !it.equals(localUsername.trimStart('@'), ignoreCase = true) }
+            .distinct()
+        for (peer in peers) {
+            runCatching {
+                sendWireByPeer(
+                    peer,
+                    WireMessage(
+                        type = WireMessage.TYPE_TEXT,
+                        id = messageId,
+                        timestamp = System.currentTimeMillis(),
+                        text = text,
+                        kind = kind.name,
+                        sticker = sticker,
+                        replyToId = replyToId,
+                        replyToText = replyToText,
+                        groupId = roomId,
+                        chatTitle = chat.title,
+                        chatType = chat.type.name,
+                        senderName = senderName,
+                        roomMembers = chat.members,
+                        roomOwner = chat.ownerUsername,
+                        roomAdmins = chat.admins,
+                        roomChannel = chat.type == ChatType.CHANNEL,
+                    ),
+                )
+            }.onFailure {
+                Log.w("TAGaSync", "room fan-out to $peer failed: ${it.message}")
+            }
+        }
+    }
+
+    /** Приглашение в комнату: создаёт групповой чат у участника. */
+    suspend fun inviteToRoom(chatId: String, peers: List<String>): Result<Unit> = runCatching {
+        val chat = repository.chat(chatId) ?: error("chat not found")
+        val roomId = chat.roomId ?: chat.id
+        for (peer in peers.map { it.trimStart('@').lowercase() }.filter { it.isNotBlank() }.distinct()) {
+            runCatching {
+                sendWireByPeer(
+                    peer,
+                    WireMessage(
+                        type = WireMessage.TYPE_ROOM,
+                        id = UUID.randomUUID().toString(),
+                        timestamp = System.currentTimeMillis(),
+                        groupId = roomId,
+                        chatTitle = chat.title,
+                        chatType = chat.type.name,
+                        senderName = chat.title,
+                        roomMembers = chat.members,
+                        roomOwner = chat.ownerUsername,
+                        roomAdmins = chat.admins,
+                        roomChannel = chat.type == ChatType.CHANNEL,
+                    ),
+                )
+            }.onFailure {
+                Log.w("TAGaSync", "room invite to $peer failed: ${it.message}")
+            }
+        }
+    }
+
     suspend fun edit(chatId: String, messageId: String, text: String): Result<Unit> = runCatching {
         val chat = directChat(chatId)
         sendWire(
@@ -274,7 +352,74 @@ class ChatSync(
     }
 
     /** Применяет структурированное сообщение. true — если появилось новое сообщение. */
-    private fun handleWire(sender: String, wire: WireMessage): Boolean = when (wire.type) {
+    private fun handleWire(sender: String, wire: WireMessage): Boolean =
+        if (!wire.groupId.isNullOrBlank()) {
+            handleRoomWire(sender, wire)
+        } else {
+            handleDirectWire(sender, wire)
+        }
+
+    private fun handleRoomWire(sender: String, wire: WireMessage): Boolean = when (wire.type) {
+        WireMessage.TYPE_ROOM -> {
+            repository.applyRoom(
+                GroupRoom(
+                    id = wire.groupId.orEmpty(),
+                    username = wire.groupId.orEmpty(),
+                    title = wire.chatTitle.orEmpty().ifBlank { "@$sender" },
+                    description = "",
+                    channel = wire.roomChannel,
+                    owner = wire.roomOwner,
+                    admins = wire.roomAdmins,
+                    members = wire.roomMembers,
+                ),
+            )
+            false
+        }
+
+        WireMessage.TYPE_TEXT -> repository.receiveGroupMessage(
+            roomId = wire.groupId.orEmpty(),
+            roomTitle = wire.chatTitle.orEmpty(),
+            channel = wire.roomChannel || wire.chatType == "CHANNEL",
+            senderUsername = sender,
+            senderName = wire.senderName ?: "@$sender",
+            text = wire.text,
+            messageId = wire.id,
+            timestamp = wire.timestamp,
+            kind = parseKind(wire.kind),
+            sticker = wire.sticker,
+            replyToId = wire.replyToId,
+            replyToText = wire.replyToText,
+        )
+
+        WireMessage.TYPE_MEDIA -> {
+            val attachment = wire.attachment?.toAttachment()
+            if (attachment == null) {
+                false
+            } else {
+                repository.receiveGroupMessage(
+                    roomId = wire.groupId.orEmpty(),
+                    roomTitle = wire.chatTitle.orEmpty(),
+                    channel = wire.roomChannel || wire.chatType == "CHANNEL",
+                    senderUsername = sender,
+                    senderName = wire.senderName ?: "@$sender",
+                    text = wire.text,
+                    messageId = wire.id,
+                    timestamp = wire.timestamp,
+                    kind = parseKind(wire.kind),
+                    attachment = attachment,
+                    replyToId = wire.replyToId,
+                    replyToText = wire.replyToText,
+                )
+            }
+        }
+
+        else -> {
+            Log.w("TAGaSync", "unsupported room wire ${wire.type}")
+            false
+        }
+    }
+
+    private fun handleDirectWire(sender: String, wire: WireMessage): Boolean = when (wire.type) {
         WireMessage.TYPE_TEXT -> {
             repository.receiveMessage(
                 senderUsername = sender,

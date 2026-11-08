@@ -130,6 +130,10 @@ fun Route.roomRoutes(store: InMemoryStore) {
             call.respond(HttpStatusCode.BadRequest, ErrorResponse("empty username", "BAD_REQUEST"))
             return@post
         }
+        if (!request.remove && store.deviceByUsername(target) == null) {
+            call.respond(HttpStatusCode.NotFound, ErrorResponse("user not found", "NOT_FOUND"))
+            return@post
+        }
         val updated = store.changeRoomMember(id, authed.device.username, target, request.remove)
         if (updated == null) {
             call.respond(HttpStatusCode.Forbidden, ErrorResponse("not allowed", "FORBIDDEN"))

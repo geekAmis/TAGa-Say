@@ -96,6 +96,24 @@ data class Chat(
     val lastMessage: String = "",
     val lastTimestamp: Long = 0,
     val description: String = "",
+    val roomId: String? = null,
+    val members: List<String> = emptyList(),
+    val ownerUsername: String = "",
+    val admins: List<String> = emptyList(),
+)
+
+/** Комната на relay: группа или канал. Содержимое сообщений сюда не входит. */
+@Serializable
+data class GroupRoom(
+    val id: String,
+    val username: String,
+    val title: String,
+    val description: String = "",
+    val channel: Boolean = false,
+    val owner: String,
+    val admins: List<String> = emptyList(),
+    val members: List<String> = emptyList(),
+    val createdAt: Long = 0,
 )
 
 @Serializable

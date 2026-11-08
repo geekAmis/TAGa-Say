@@ -724,8 +724,175 @@ class AppRepository(private val store: VaultStore) {
         }
     }
 
-    // ------------------------------------------------------------- profile
+    // -------------------------------------------------------------- rooms
 
+    fun createRoomChat(room: com.tagasay.app.data.model.GroupRoom): Chat {
+        val existing = _vault.value.chats.firstOrNull {
+            it.roomId == room.id || it.id == room.id ||
+                it.username.equals(room.username, ignoreCase = true)
+        }
+        if (existing != null) return existing
+        val chat = Chat(
+            id = room.id,
+            title = room.title,
+            username = room.username,
+            type = if (room.channel) ChatType.CHANNEL else ChatType.GROUP,
+            avatarColor = AVATAR_COLORS.random(),
+            lastMessage = if (room.channel) "Канал" else "Группа создана",
+            lastTimestamp = System.currentTimeMillis(),
+            description = room.description,
+            roomId = room.id,
+            members = room.members,
+            ownerUsername = room.owner,
+            admins = room.admins,
+        )
+        updateVault { it.copy(chats = listOf(chat) + it.chats) }
+        return chat
+    }
+
+    fun applyRoom(room: com.tagasay.app.data.model.GroupRoom) {
+        updateVault { data ->
+            val exists = data.chats.any {
+                it.roomId == room.id || it.id == room.id ||
+                    it.username.equals(room.username, ignoreCase = true)
+            }
+            if (!exists) {
+                val chat = Chat(
+                    id = room.id,
+                    title = room.title,
+                    username = room.username,
+                    type = if (room.channel) ChatType.CHANNEL else ChatType.GROUP,
+                    avatarColor = AVATAR_COLORS.random(),
+                    lastMessage = room.description.ifBlank {
+                        if (room.channel) "Канал" else "Группа"
+                    },
+                    lastTimestamp = System.currentTimeMillis(),
+                    description = room.description,
+                    roomId = room.id,
+                    members = room.members,
+                    ownerUsername = room.owner,
+                    admins = room.admins,
+                )
+                data.copy(chats = listOf(chat) + data.chats)
+            } else {
+                data.copy(
+                    chats = data.chats.map { chat ->
+                        if (chat.roomId == room.id || chat.id == room.id ||
+                            chat.username.equals(room.username, ignoreCase = true)
+                        ) {
+                            chat.copy(
+                                title = room.title,
+                                username = room.username,
+                                description = room.description,
+                                members = room.members,
+                                ownerUsername = room.owner,
+                                admins = room.admins,
+                                roomId = room.id,
+                            )
+                        } else {
+                            chat
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    fun removeRoomChat(roomId: String) {
+        updateVault { data ->
+            data.copy(
+                chats = data.chats.filterNot { it.roomId == roomId },
+                messages = data.messages - roomId,
+            )
+        }
+    }
+
+    fun createLocalGroup(title: String, members: List<String>, owner: String): Chat {
+        val id = "group_${System.currentTimeMillis()}"
+        val chat = Chat(
+            id = id,
+            title = title,
+            username = id,
+            type = ChatType.GROUP,
+            avatarColor = AVATAR_COLORS.random(),
+            lastMessage = "Группа создана",
+            lastTimestamp = System.currentTimeMillis(),
+            members = (members + owner).distinct(),
+            ownerUsername = owner,
+        )
+        updateVault { it.copy(chats = listOf(chat) + it.chats) }
+        return chat
+    }
+
+    fun receiveGroupMessage(
+        roomId: String,
+        roomTitle: String,
+        channel: Boolean,
+        senderUsername: String,
+        senderName: String,
+        text: String,
+        messageId: String,
+        timestamp: Long,
+        kind: MessageKind = MessageKind.TEXT,
+        attachment: Attachment? = null,
+        sticker: String? = null,
+        replyToId: String? = null,
+        replyToText: String? = null,
+    ): Boolean {
+        val existingChat = _vault.value.chats.firstOrNull {
+            it.roomId == roomId || it.id == roomId
+        }
+        val chatId = existingChat?.id ?: roomId
+        if (_vault.value.messages[chatId].orEmpty().any { it.id == messageId }) return false
+        val now = if (timestamp > 0) timestamp else System.currentTimeMillis()
+        val message = Message(
+            id = messageId,
+            chatId = chatId,
+            senderId = senderUsername,
+            senderName = senderName,
+            text = text,
+            timestamp = now,
+            isMine = false,
+            status = MessageStatus.DELIVERED,
+            kind = kind,
+            attachment = attachment,
+            sticker = sticker,
+            replyToId = replyToId,
+            replyToText = replyToText,
+        )
+        updateVault { data ->
+            val chat = existingChat ?: Chat(
+                id = chatId,
+                title = roomTitle.ifBlank { "@$senderUsername" },
+                username = roomId,
+                type = if (channel) ChatType.CHANNEL else ChatType.GROUP,
+                avatarColor = AVATAR_COLORS.random(),
+                lastMessage = preview(message),
+                lastTimestamp = now,
+                unread = 1,
+                roomId = roomId,
+                members = emptyList(),
+            )
+            data.copy(
+                chats = if (existingChat == null) {
+                    listOf(chat) + data.chats
+                } else {
+                    data.chats.map {
+                        if (it.id == chatId) {
+                            it.copy(
+                                lastMessage = preview(message),
+                                lastTimestamp = now,
+                                unread = it.unread + 1,
+                            )
+                        } else it
+                    }
+                },
+                messages = data.messages + (chatId to (data.messages[chatId].orEmpty() + message)),
+            )
+        }
+        _incoming.tryEmit(message)
+        return true
+    }
     fun updateProfile(displayName: String, username: String, phone: String, bio: String) {
         updateVault {
             it.copy(

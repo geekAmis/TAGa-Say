@@ -94,6 +94,8 @@ class SyncManager(
                 chatSync = sync
                 backoff = 2
                 stateSync.pullAndApply(api, session)
+                runCatching { api.rooms().forEach { repository.applyRoom(it) } }
+                    .onFailure { Log.w("TAGaSync", "rooms sync failed: ${it.message}") }
                 var ticks = 0
                 while (currentCoroutineContext().isActive) {
                     sync.poll()

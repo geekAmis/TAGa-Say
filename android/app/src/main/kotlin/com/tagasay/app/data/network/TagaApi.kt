@@ -126,6 +126,27 @@ data class ProfileUpdateRequest(
 )
 
 @Serializable
+data class CreateRoomRequest(
+    val title: String,
+    val username: String = "",
+    val description: String = "",
+    val channel: Boolean = false,
+    val members: List<String> = emptyList(),
+)
+
+@Serializable
+data class RoomMemberRequest(
+    val username: String,
+    val remove: Boolean = false,
+)
+
+@Serializable
+data class UpdateRoomRequest(
+    val title: String? = null,
+    val description: String? = null,
+)
+
+@Serializable
 private data class ErrorDto(val error: String = "error", val code: String = "ERROR")
 
 class ApiException(val status: Int, message: String) : IOException(message)
@@ -242,6 +263,63 @@ class TagaApi(
             ),
         )
     }
+
+    // ----------------------------------------------------------------- rooms
+
+    suspend fun createRoom(request: CreateRoomRequest): com.tagasay.app.data.model.GroupRoom =
+        post(
+            "/v1/rooms",
+            json.encodeToString(CreateRoomRequest.serializer(), request),
+            com.tagasay.app.data.model.GroupRoom.serializer(),
+        )
+
+    suspend fun rooms(query: String = ""): List<com.tagasay.app.data.model.GroupRoom> =
+        get(
+            if (query.isBlank()) "/v1/rooms" else "/v1/rooms?query=${java.net.URLEncoder.encode(query, "UTF-8")}",
+            ListSerializer(com.tagasay.app.data.model.GroupRoom.serializer()),
+        )
+
+    suspend fun room(id: String): com.tagasay.app.data.model.GroupRoom =
+        get("/v1/rooms/$id", com.tagasay.app.data.model.GroupRoom.serializer())
+
+    suspend fun joinRoom(id: String): com.tagasay.app.data.model.GroupRoom =
+        post(
+            "/v1/rooms/$id/join",
+            "{}",
+            com.tagasay.app.data.model.GroupRoom.serializer(),
+        )
+
+    suspend fun leaveRoom(id: String) {
+        postUnit("/v1/rooms/$id/leave", "{}")
+    }
+
+    suspend fun changeRoomMember(
+        id: String,
+        username: String,
+        remove: Boolean,
+    ): com.tagasay.app.data.model.GroupRoom =
+        post(
+            "/v1/rooms/$id/members",
+            json.encodeToString(
+                RoomMemberRequest.serializer(),
+                RoomMemberRequest(username, remove),
+            ),
+            com.tagasay.app.data.model.GroupRoom.serializer(),
+        )
+
+    suspend fun updateRoom(
+        id: String,
+        title: String? = null,
+        description: String? = null,
+    ): com.tagasay.app.data.model.GroupRoom =
+        post(
+            "/v1/rooms/$id/update",
+            json.encodeToString(
+                UpdateRoomRequest.serializer(),
+                UpdateRoomRequest(title, description),
+            ),
+            com.tagasay.app.data.model.GroupRoom.serializer(),
+        )
 
     /** Состояние relay и ЛК AEZA (проксируется сервером). */
     suspend fun serverInfo(): ServerInfo =

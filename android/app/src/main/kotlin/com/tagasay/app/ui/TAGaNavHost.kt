@@ -53,6 +53,7 @@ import com.tagasay.app.ui.screens.MediaGalleryScreen
 import com.tagasay.app.ui.screens.MyStoriesScreen
 import com.tagasay.app.ui.screens.OnboardingScreen
 import com.tagasay.app.ui.screens.ProfileScreen
+import com.tagasay.app.ui.screens.RoomMembersScreen
 import com.tagasay.app.ui.screens.SearchScreen
 import com.tagasay.app.ui.screens.SettingsScreen
 import com.tagasay.app.ui.screens.StickerPacksScreen
@@ -221,8 +222,13 @@ private fun MainNavHost(
                         folders = vault.chatFolders,
                         stories = vault.stories,
                         profile = vault.profile,
+                        contacts = vault.contacts,
                         onOpenChat = { navController.navigate("chat/$it") },
                         onNewChat = { navController.navigateToTab("contacts") },
+                        onCreateGroup = { title, members ->
+                            val chat = viewModel.createGroup(title, members)
+                            navController.navigate("chat/${chat.id}")
+                        },
                         onOpenSearch = { navController.navigate("search") },
                         onOpenFolders = { navController.navigate("folders") },
                         onOpenCalls = { navController.navigate("calls") },
@@ -380,6 +386,7 @@ private fun MainNavHost(
                             },
                             onOpenSettings = { navController.navigate("chatSettings") },
                             onOpenMedia = { navController.navigate("media/$chatId") },
+                            onOpenMembers = { navController.navigate("roomMembers/$chatId") },
                             onCall = { navController.navigate("call/$chatId") },
                             onSend = { text, kind, attachment, sticker, reply, replyId, poll ->
                                 viewModel.sendMessage(
@@ -445,9 +452,29 @@ private fun MainNavHost(
                     }
                 }
 
+                composable("roomMembers/{chatId}") { entry ->
+                    val chatId = entry.arguments?.getString("chatId").orEmpty()
+                    val chat = vault.chats.firstOrNull { it.id == chatId }
+                    if (chat == null) {
+                        LaunchedEffect(Unit) { navController.backOrHome() }
+                    } else {
+                        RoomMembersScreen(
+                            chat = chat,
+                            contacts = vault.contacts,
+                            currentUsername = settings.username,
+                            onBack = { navController.backOrHome() },
+                            onAdd = { username -> viewModel.addRoomMember(chatId, username) },
+                            onRemove = { username -> viewModel.removeRoomMember(chatId, username) },
+                            onLeave = {
+                                viewModel.leaveRoom(chatId)
+                                navController.navigateToTab("chats")
+                            },
+                        )
+                    }
+                }
+
                 composable("stickers") {
-                    StickerPacksScreen(
-                        packs = vault.stickerPacks,
+                    StickerPacksScreen(                        packs = vault.stickerPacks,
                         favorites = vault.stickerFavorites,
                         onBack = { navController.backOrHome() },
                         onInstall = viewModel::installStickerPack,

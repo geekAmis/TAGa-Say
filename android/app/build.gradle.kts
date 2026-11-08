@@ -25,8 +25,8 @@ android {
         applicationId = "com.tagasay.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.2.0"
+        versionCode = 8
+        versionName = "1.3.0"
         buildConfigField("String", "CERT_PIN", "\"$certPin\"")
         buildConfigField("String", "RELEASE_CERT_SHA256", "\"$releaseCertSha256\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

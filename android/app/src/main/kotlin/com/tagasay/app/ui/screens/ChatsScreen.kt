@@ -24,17 +24,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.Contact
 import com.tagasay.app.data.model.Story
 import com.tagasay.app.data.model.UserProfile
 import com.tagasay.app.ui.components.Avatar
@@ -66,8 +73,10 @@ fun ChatsScreen(
     folders: List<ChatFolder>,
     stories: List<Story>,
     profile: UserProfile,
+    contacts: List<Contact>,
     onOpenChat: (String) -> Unit,
     onNewChat: () -> Unit,
+    onCreateGroup: (String, List<String>) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenFolders: () -> Unit,
     onOpenCalls: () -> Unit,
@@ -78,6 +87,7 @@ fun ChatsScreen(
     var query by remember { mutableStateOf("") }
     var folderId by remember { mutableStateOf<String?>(null) }
     var viewingStory by remember { mutableStateOf<String?>(null) }
+    var showNewGroup by remember { mutableStateOf(false) }
     val folder = folders.firstOrNull { it.id == folderId }
     val q = query.trim()
 
@@ -129,6 +139,9 @@ fun ChatsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                IconButton(onClick = { showNewGroup = true }) {
+                    Icon(Icons.Filled.Groups, contentDescription = "Новая группа")
                 }
                 IconButton(onClick = onOpenCalls) {
                     Icon(Icons.Filled.Call, contentDescription = "Звонки")
@@ -246,6 +259,95 @@ fun ChatsScreen(
             onViewed = onMarkStoryViewed,
         )
     }
+
+    if (showNewGroup) {
+        NewGroupDialog(
+            contacts = contacts,
+            onDismiss = { showNewGroup = false },
+            onCreate = { title, members ->
+                showNewGroup = false
+                onCreateGroup(title, members)
+            },
+        )
+    }
+}
+
+@Composable
+private fun NewGroupDialog(
+    contacts: List<Contact>,
+    onDismiss: () -> Unit,
+    onCreate: (String, List<String>) -> Unit,
+) {
+    var title by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(emptySet<String>()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Новая группа") },
+        text = {
+            Column {
+                TextField(
+                    value = title,
+                    onValueChange = { title = it.take(80) },
+                    placeholder = { Text("Название группы") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Участники (${selected.size})",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                LazyColumn(modifier = Modifier.height(280.dp)) {
+                    items(contacts, key = { it.id }) { contact ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selected = if (contact.username in selected) {
+                                        selected - contact.username
+                                    } else {
+                                        selected + contact.username
+                                    }
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = contact.username in selected,
+                                onCheckedChange = {
+                                    selected = if (it) selected + contact.username else selected - contact.username
+                                },
+                            )
+                            Avatar(
+                                name = contact.displayName,
+                                color = contact.avatarColor,
+                                size = 34.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(contact.displayName, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    "@${contact.username}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = title.isNotBlank() && selected.size >= 1,
+                onClick = { onCreate(title.trim(), selected.toList()) },
+            ) { Text("Создать") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        },
+    )
 }
 
 @Composable

@@ -83,6 +83,26 @@ class RoomRoutesTest {
     }
 
     @Test
+    fun unknownUserCannotBeAddedToRoom() = testApplication {
+        val store = InMemoryStore()
+        val owner = runBlocking { register(store, "owner3") }
+        application { module(store = store, updateStore = UpdateStore("missing", null, null)) }
+
+        val created = client.post("/v1/rooms") {
+            header("Authorization", "Bearer $owner")
+            contentType(ContentType.Application.Json)
+            setBody("""{"title":"NoGhosts","username":"noghosts"}""")
+        }
+        val id = Regex("\"id\":\"(room_[^\"]+)\"").find(created.bodyAsText())?.groupValues?.get(1).orEmpty()
+        val add = client.post("/v1/rooms/$id/members") {
+            header("Authorization", "Bearer $owner")
+            contentType(ContentType.Application.Json)
+            setBody("""{"username":"ghost"}""")
+        }
+        assertEquals(HttpStatusCode.NotFound, add.status)
+    }
+
+    @Test
     fun channelCanBeJoinedAndReadBySubscriber() = testApplication {
         val store = InMemoryStore()
         val owner = runBlocking { register(store, "owner") }

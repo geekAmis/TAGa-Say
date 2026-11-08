@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.tagasay.app.TAGaSayApp
 import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.Channel
+import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.Message
@@ -19,6 +21,7 @@ import com.tagasay.app.data.model.ServerInfo
 import com.tagasay.app.data.model.UiState
 import com.tagasay.app.data.network.TagaApi
 import com.tagasay.app.data.network.TwoFactorSetupResponse
+import com.tagasay.app.data.network.CreateRoomRequest
 import com.tagasay.app.sync.SyncService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -166,8 +169,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             poll = poll,
         )
         val chat = repository.chat(chatId) ?: return
-        if (chat.type != ChatType.PRIVATE) return
         if (kind == MessageKind.SYSTEM || kind == MessageKind.CALL) return
+        if (chat.type != ChatType.PRIVATE) {
+            if (chat.type == ChatType.CHANNEL && !canPostToChannel(chat)) return
+            if (attachment != null) {
+                // Медиа в группах — следующий шаг; не отправляем пустой текст.
+                repository.setMessageStatus(chatId, message.id, MessageStatus.FAILED)
+                return
+            }
+            viewModelScope.launch(Dispatchers.IO) {
+                val sync = syncManager.awaitChatSync() ?: run {
+                    repository.setMessageStatus(chatId, message.id, MessageStatus.FAILED)
+                    return@launch
+                }
+                val senderName = runCatching { settingsStore.settings.first().displayName }
+                    .getOrDefault("")
+                    .ifBlank { "Вы" }
+                val result = sync.sendRoom(
+                    chatId = chatId,
+                    messageId = message.id,
+                    text = text,
+                    kind = kind,
+                    sticker = sticker,
+                    replyToId = replyToId,
+                    replyToText = replyToText,
+                    senderName = senderName,
+                )
+                repository.setMessageStatus(
+                    chatId,
+                    message.id,
+                    if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED,
+                )
+                result.onFailure { Log.w("TAGaRooms", "group send failed: ${it.message}") }
+            }
+            return
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             val sync = syncManager.awaitChatSync() ?: run {
@@ -287,8 +323,104 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun ensureDirectChat(username: String, displayName: String, avatarColor: Long): String =
         repository.ensureDirectChat(username, displayName, avatarColor)
 
-    fun createChannel(title: String, username: String, description: String) =
-        repository.createChannel(title, username, description)
+    fun createChannel(title: String, username: String, description: String): Channel {
+        val channel = repository.createChannel(title, username, description)
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = container.accountManager.currentSession() ?: return@launch
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching {
+                api.createRoom(
+                    CreateRoomRequest(
+                        title = title,
+                        username = channel.username,
+                        description = description,
+                        channel = true,
+                    ),
+                )
+            }.onSuccess { room -> repository.applyRoom(room) }
+                .onFailure { Log.w("TAGaRooms", "create channel failed: ${it.message}") }
+        }
+        return channel
+    }
+
+    fun createGroup(title: String, members: List<String>): Chat {
+        val owner = container.accountManager.currentSession()?.username
+            ?: repository.vault.value.profile.username
+        val chat = repository.createLocalGroup(title, members, owner)
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = container.accountManager.currentSession() ?: return@launch
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching {
+                api.createRoom(
+                    CreateRoomRequest(
+                        title = title,
+                        username = chat.username,
+                        members = members,
+                        channel = false,
+                    ),
+                )
+            }.onSuccess { room ->
+                repository.applyRoom(room)
+                syncManager.awaitChatSync()?.inviteToRoom(chat.id, members)
+            }.onFailure { Log.w("TAGaRooms", "create group failed: ${it.message}") }
+        }
+        return chat
+    }
+
+    fun addRoomMember(chatId: String, username: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val chat = repository.chat(chatId) ?: return@launch
+            val roomId = chat.roomId ?: return@launch
+            val session = container.accountManager.currentSession() ?: return@launch
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching { api.changeRoomMember(roomId, username, remove = false) }
+                .onSuccess { room ->
+                    repository.applyRoom(room)
+                    syncManager.awaitChatSync()?.inviteToRoom(chatId, listOf(username))
+                }
+                .onFailure { Log.w("TAGaRooms", "add member failed: ${it.message}") }
+        }
+    }
+
+    fun removeRoomMember(chatId: String, username: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val chat = repository.chat(chatId) ?: return@launch
+            val roomId = chat.roomId ?: return@launch
+            val session = container.accountManager.currentSession() ?: return@launch
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching { api.changeRoomMember(roomId, username, remove = true) }
+                .onSuccess { room -> repository.applyRoom(room) }
+                .onFailure { Log.w("TAGaRooms", "remove member failed: ${it.message}") }
+        }
+    }
+
+    fun leaveRoom(chatId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val chat = repository.chat(chatId) ?: return@launch
+            val roomId = chat.roomId ?: return@launch
+            val session = container.accountManager.currentSession() ?: return@launch
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching { api.leaveRoom(roomId) }
+            repository.removeRoomChat(roomId)
+        }
+    }
+
+    fun refreshRooms() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = container.accountManager.currentSession() ?: return@launch
+            val api = TagaApi(session.serverUrl, session.accessToken)
+            runCatching { api.rooms() }
+                .onSuccess { rooms -> rooms.forEach(repository::applyRoom) }
+                .onFailure { Log.w("TAGaRooms", "refresh rooms failed: ${it.message}") }
+        }
+    }
+
+    private fun canPostToChannel(chat: Chat): Boolean {
+        val me = repository.vault.value.profile.username
+        if (chat.ownerUsername.isBlank()) return true
+        return chat.ownerUsername.equals(me, true) ||
+            chat.admins.any { it.equals(me, true) }
+    }
 
     fun installStickerPack(packId: String, installed: Boolean) =
         repository.installStickerPack(packId, installed)

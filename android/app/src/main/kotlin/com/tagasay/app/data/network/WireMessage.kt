@@ -29,6 +29,14 @@ data class WireMessage(
     val forwardedFrom: String? = null,
     val attachment: WireAttachment? = null,
     val poll: WirePoll? = null,
+    val groupId: String? = null,
+    val chatTitle: String? = null,
+    val chatType: String? = null,
+    val senderName: String? = null,
+    val roomMembers: List<String> = emptyList(),
+    val roomOwner: String = "",
+    val roomAdmins: List<String> = emptyList(),
+    val roomChannel: Boolean = false,
     val ids: List<String> = emptyList(),
 ) {
     companion object {
@@ -39,6 +47,7 @@ data class WireMessage(
         const val TYPE_DELIVERED = "delivered"
         const val TYPE_READ = "read"
         const val TYPE_REACTION = "reaction"
+        const val TYPE_ROOM = "room"
     }
 }
 
