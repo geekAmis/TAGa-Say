@@ -47,6 +47,14 @@ API-ключ AEZA, ключи подписи) в репозиторий не п�
 17. Сделать группы и каналы рабочими: серверные комнаты и участники, pairwise
     fan-out E2EE-конвертов, приглашения, владелец, ограничение записи в каналах.
     Версия 1.3.0, сервер 1.1.0.
+18. Платформа ботов и `@BotFather` (релиз 1.4.0, сервер 1.2.0): отдельный
+    `BotStore`, токены HMAC + AES-GCM, Bot API v1 (getMe/getUpdates/send/
+    edit/delete/commands/callback), `/start`-gate, FSM BotFather, лимит 20,
+    ретеншн. Серверная часть в `feature/bots-1.4.0`.
+19. Боты, batch 2: `BotMediaStore` (файлы, TTL/квоты, MIME, подписанные
+    ссылки), webhook (HTTPS/SSRF/HMAC/ретраи/409), боты в комнатах
+    (`Room.bots`, `my_chat_member`, `channel_post`, privacy on/off),
+    обновлены docs/openapi. Тесты `server: test` — 42.
 
 ## Правила
 

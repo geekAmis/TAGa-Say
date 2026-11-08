@@ -1,5 +1,6 @@
 package com.tagasay.server.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -141,6 +142,26 @@ data class UserState(
 )
 
 @Serializable
+data class RoomBotRights(
+    @SerialName("change_info") val changeInfo: Boolean = false,
+    @SerialName("delete_messages") val deleteMessages: Boolean = false,
+    @SerialName("ban_users") val banUsers: Boolean = false,
+    @SerialName("invite_users") val inviteUsers: Boolean = false,
+    @SerialName("pin_messages") val pinMessages: Boolean = false,
+    @SerialName("promote_members") val promoteMembers: Boolean = false,
+    @SerialName("manage_chat") val manageChat: Boolean = false,
+    @SerialName("post_messages") val postMessages: Boolean = false,
+)
+
+@Serializable
+data class RoomBot(
+    val username: String,
+    val addedBy: String = "",
+    val addedAt: Long = 0,
+    val rights: RoomBotRights = RoomBotRights(),
+)
+
+@Serializable
 data class Room(
     val id: String,
     val username: String,
@@ -151,6 +172,10 @@ data class Room(
     val admins: List<String> = emptyList(),
     val members: List<String> = emptyList(),
     val createdAt: Long = 0,
+    /** default emptyList — обратная совместимость со старым JSON. */
+    val bots: List<RoomBot> = emptyList(),
+    /** username -> timestamp вступления (для inbox новых участников). */
+    val memberSince: Map<String, Long> = emptyMap(),
 )
 
 @Serializable

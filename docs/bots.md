@@ -1,5 +1,15 @@
 # Платформа ботов TAGa-Say
 
+> **Статус 1.2.0 (сервер):** ядро платформы и @BotFather работают.
+> Реализованы `getMe`, `getUpdates`, `sendMessage`, `editMessageText`,
+> `deleteMessage`, команды, callback, `/start`-gate, `BotStore`, файлы
+> (`sendPhoto`/`sendDocument`/`sendVoice`/`sendVideo`/`sendAudio`, `getFile`),
+> webhook и боты в группах/каналах.
+> Подробные контракты — [bot-api.md](bot-api.md), паритет BotFather —
+> [botfather.md](botfather.md), безопасность — [bot-security.md](bot-security.md).
+> Web App, inline, административные методы комнат (pin/ban/restrict/инвайты) —
+> `[~]` (следующие этапы): методы честно возвращают `400 unsupported`.
+
 Боты — первоклассные участники мессенджера: их можно добавить в личный чат, группу или
 канал, вызвать командой, они умеют отвечать, редактировать сообщения, присылать файлы и
 работать с inline-клавиатурами.
@@ -29,8 +39,11 @@
 taga_bot_7f3c... .<64-char-secret>
 ```
 
-Хранится только `Argon2id(token)`; при утечке токен отзывается и ротируется.
-Scopes: `messages:read`, `messages:send`, `chats:manage`, `files`, `webhook`, `payments`.
+Хранится HMAC-SHA256(token) для проверки и AES-256-GCM-шифртекст для показа
+владельцу; ключ — `TAGASAY_BOT_TOKEN_KEY` (ADR-005). При утечке токен
+отзывается и ротируется. Scopes: `updates:read`, `messages:send`,
+`messages:edit`, `messages:delete`, `files:read`, `files:write`, `chats:read`,
+`chats:manage`, `webapp`, `inline`.
 
 ## 3. Bot API (v1)
 
@@ -39,7 +52,7 @@ Scopes: `messages:read`, `messages:send`, `chats:manage`, `files`, `webhook`, `p
 ### 3.1. Long polling
 
 ```
-GET /updates?offset=<update_id>&limit=100&timeout=30
+GET /getUpdates?offset=<update_id>&limit=100&timeout=30
 → [Update, ...]
 ```
 
@@ -60,48 +73,33 @@ GET /updates?offset=<update_id>&limit=100&timeout=30
 }
 ```
 
-Типы: `message`, `edited_message`, `channel_post`, `callback_query`, `chat_member`,
-`message_reaction`.
+Типы в 1.2.0: `message`, `channel_post`, `callback_query`, `my_chat_member`.
+Остальные (`edited_message`, `chat_member`, `message_reaction`, …) — `[~]`.
 
 ### 3.2. Webhook
 
-```
-POST /webhook
-{
-  "url": "https://bot.example/taga",
-  "secret_token": "optional-hmac-secret",
-  "allowed_updates": ["message", "callback_query"]
-}
-```
-
-Запрос к боту:
-
-```
-POST <url>
-X-TAGa-Say-Timestamp: 1762473600
-X-TAGa-Say-Signature: sha256=<HMAC-SHA256(secret, timestamp.body)>
-Content-Type: application/json
-```
-
-Таймаут 5 с, 3 ретрая с экспоненциальной задержкой, затем сообщение уходит в очередь
-`failed_updates`. Webhook должен отвечать `2xx` быстро; обработка — асинхронно.
+`setWebhook`/`deleteWebhook`/`getWebhookInfo` включены: только HTTPS,
+SSRF-защита (private/loopback/metadata, повторный DNS), HMAC +
+`X-TAGa-Say-Bot-Api-Secret-Token`, таймаут 5 с, 3 ретрая, `last_error`,
+409 при активном `getUpdates`. Полный контракт —
+[bot-api.md](bot-api.md) §3.9, безопасность — [bot-security.md](bot-security.md) §6.
 
 ### 3.3. Методы
 
-| Метод | Назначение |
-|---|---|
-| `getMe` | информация о боте |
-| `getUpdates` | long polling |
-| `setWebhook` / `deleteWebhook` / `getWebhookInfo` | управление webhook |
-| `sendMessage` | текст, `parse_mode`, `reply_markup` |
-| `editMessageText` | редактирование своего сообщения |
-| `deleteMessage` | удаление своего сообщения |
-| `sendPhoto` / `sendVideo` / `sendDocument` / `sendAudio` | файлы (multipart или `file_id`) |
-| `getFile` | ссылка на скачивание |
-| `sendChatAction` | `typing`, `upload_photo`, ... |
-| `answerCallbackQuery` | ответ на нажатие inline-кнопки |
-| `setMyCommands` / `getMyCommands` | меню команд |
-| `banChatMember` / `restrictChatMember` | только с scope `chats:manage` |
+| Метод | Статус | Назначение |
+|---|---|---|
+| `getMe` | ✅ | информация о боте |
+| `getUpdates` | ✅ | long polling |
+| `setWebhook` / `deleteWebhook` / `getWebhookInfo` | ✅ | HTTPS, SSRF, HMAC, ретраи |
+| `sendMessage` | ✅ | текст, `parse_mode`, `reply_markup` |
+| `editMessageText` | ✅ | редактирование своего сообщения |
+| `deleteMessage` | ✅ | удаление своего сообщения |
+| `sendPhoto` / `sendVideo` / `sendDocument` / `sendAudio` / `sendVoice` | ✅ | multipart или `file_id`, MIME, квоты |
+| `getFile` | ✅ | подписанная ссылка TTL 1 час |
+| `sendChatAction` | `[~]` | следующая версия |
+| `answerCallbackQuery` | ✅ | ответ на нажатие inline-кнопки |
+| `setMyCommands` / `getMyCommands` | ✅ | меню команд |
+| `banChatMember` / `restrictChatMember` / `pinChatMessage` | `[~]` | права хранятся, методы следующие |
 
 `sendMessage`:
 
@@ -138,8 +136,10 @@ Content-Type: application/json
 - Бот видит plaintext только тех сообщений, которые ему адресованы; ключи чата ему
   недоступны.
 - Все сообщения бота помечаются бейджем «бот»; пользователь может заблокировать бота.
-- Токены: хеш Argon2id, ротация, отзыв, последние 5 использований в audit log.
-- Webhook: только HTTPS, запрет приватных IP (SSRF), проверка HMAC, pinning по желанию.
+- Токены: HMAC для проверки + AES-256-GCM для показа, ротация, отзыв,
+  audit без секрета (ADR-005).
+- Webhook: только HTTPS, запрет приватных IP (SSRF), проверка HMAC, pinning
+  по желанию — включено; остаточное окно DNS rebinding описано в ADR-007.
 - Rate limits: 30 msg/s на бота, 1 msg/s в один чат, 20 запросов/мин на updates;
   `429 {"retry_after": N}`.
 - Файлы бота проходят тот же клиентский антивирус у получателя.
@@ -154,9 +154,10 @@ Content-Type: application/json
 
 ## 7. Этапы
 
-1. Модель ботов, токены, scopes, BotFather.
-2. `getMe`, `getUpdates`, `sendMessage`, `setMyCommands`.
-3. Webhook + подпись + ретраи.
-4. Inline-клавиатуры, callback, файлы.
-5. Каталог, модерация, rate limits, аудит.
-6. Первый официальный бот — **Enchat Bridge** (см. `docs/enchat-bridge.md`).
+1. ✅ Модель ботов, токены, scopes, BotFather.
+2. ✅ `getMe`, `getUpdates`, `sendMessage`, `editMessageText`,
+   `deleteMessage`, `setMyCommands`.
+3. ✅ Webhook + подпись + ретраи + SSRF.
+4. ✅ Inline-клавиатуры (сервер принимает), callback, файлы.
+5. `[~]` Каталог, модерация; rate limits ✅, аудит ✅.
+6. `[~]` Первый официальный бот — **Enchat Bridge** (см. `docs/enchat-bridge.md`).

@@ -125,8 +125,15 @@ channels(id, owner_id, public_key, title, username)
 
 Бот — отдельная доверенная конечная точка. Сообщения боту расшифровываются на клиенте и
 передаются в Bot Gateway по TLS; ключи E2EE боту недоступны. Privacy mode по умолчанию:
-бот видит только команды, упоминания и ответы на свои сообщения. Подробности и API —
-[docs/bots.md](bots.md).
+бот видит только команды, упоминания и ответы на свои сообщения.
+
+Сервер 1.2.0: отдельный `BotStore` (`bots.json`, `bot-updates.jsonl`,
+`bot-chats.jsonl`), `BotMediaStore` (файлы, TTL/квоты), токены HMAC +
+AES-256-GCM, Bot API v1 (`/bot/v1`) с webhook и файлами, пользовательский
+`/v1/bots`, боты в комнатах (`Room.bots`) и встроенный `@BotFather`.
+Web App, inline и административные методы комнат — `[~]`. Контракты:
+[bot-api.md](bot-api.md), безопасность: [bot-security.md](bot-security.md).
+Подробности — [docs/bots.md](bots.md).
 
 Первый бот — **Enchat Bridge** — отдельный сервис (`bots/enchat-bridge`), который
 ретранслирует сообщения в публичные комнаты Enchat через ntfy. Мост видит plaintext,
