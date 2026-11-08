@@ -5,13 +5,17 @@ import com.tagasay.app.data.local.SampleData
 import com.tagasay.app.data.local.VaultStore
 import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.CallEntry
 import com.tagasay.app.data.model.Channel
 import com.tagasay.app.data.model.Chat
+import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.app.data.model.Poll
 import com.tagasay.app.data.model.StickerPack
+import com.tagasay.app.data.model.Story
 import com.tagasay.app.data.model.UserProfile
 import com.tagasay.app.data.model.VaultData
 import kotlinx.coroutines.CoroutineScope
@@ -40,7 +44,85 @@ class AppRepository(private val store: VaultStore) {
     val incoming: SharedFlow<Message> = _incoming.asSharedFlow()
 
     init {
-        if (!store.exists()) persist(_vault.value)
+        if (!store.exists()) {
+            persist(_vault.value)
+        } else {
+            migrateDefaults()
+        }
+    }
+
+    /** Добавляет новые разделы в vault, созданный предыдущими версиями. */
+    private fun migrateDefaults() {
+        val data = _vault.value
+        var next = data
+        if (next.chatFolders.isEmpty()) {
+            next = next.copy(
+                chatFolders = listOf(
+                    ChatFolder(
+                        id = "personal",
+                        title = "Личные",
+                        emoji = "👤",
+                        types = listOf(ChatType.PRIVATE, ChatType.SAVED),
+                        includeSaved = true,
+                    ),
+                    ChatFolder(
+                        id = "work",
+                        title = "Работа",
+                        emoji = "💼",
+                        types = listOf(ChatType.GROUP, ChatType.CHANNEL),
+                    ),
+                    ChatFolder(
+                        id = "unread",
+                        title = "Непрочитанные",
+                        emoji = "🔔",
+                        unreadOnly = true,
+                    ),
+                ),
+            )
+        }
+        if (next.stickerPacks.isEmpty()) {
+            next = next.copy(
+                stickerPacks = listOf(
+                    StickerPack(
+                        id = "taga-classic",
+                        title = "TAGa Classic",
+                        author = "TAGa-Say",
+                        stickers = listOf("🛡️", "🔐", "💬", "✨", "👋", "👍", "🔥", "💜", "🤝", "🚀"),
+                        installed = true,
+                    ),
+                    StickerPack(
+                        id = "cats",
+                        title = "Коты-шифровальщики",
+                        author = "TAGa-Say",
+                        stickers = listOf("😺", "😸", "😹", "😻", "😼", "🙀", "😿", "😾"),
+                        installed = true,
+                    ),
+                ),
+            )
+        }
+        val known = next.contacts.map { it.username.lowercase() }.toSet()
+        val derived = next.chats
+            .filter { it.type == ChatType.PRIVATE && it.username.isNotBlank() }
+            .filter { it.username.lowercase() !in known }
+            .map {
+                com.tagasay.app.data.model.Contact(
+                    id = it.id,
+                    username = it.username,
+                    displayName = it.title,
+                    phone = "",
+                    bio = "",
+                    avatarColor = it.avatarColor,
+                    online = it.online,
+                    verified = it.verified,
+                )
+            }
+        if (derived.isNotEmpty()) {
+            next = next.copy(contacts = next.contacts + derived)
+        }
+        if (next != data) {
+            _vault.value = next
+            persist(next)
+        }
     }
 
     // ------------------------------------------------------------- messages
@@ -68,6 +150,7 @@ class AppRepository(private val store: VaultStore) {
         forwardedFrom: String? = null,
         senderName: String = "Вы",
         isMine: Boolean = true,
+        poll: Poll? = null,
     ): Message {
         val now = System.currentTimeMillis()
         val message = Message(
@@ -85,6 +168,7 @@ class AppRepository(private val store: VaultStore) {
             replyToText = replyToText,
             replyToId = replyToId,
             forwardedFrom = forwardedFrom,
+            poll = poll,
         )
         updateVault { data ->
             val list = data.messages[chatId].orEmpty() + message
@@ -177,6 +261,7 @@ class AppRepository(private val store: VaultStore) {
         replyToId: String? = null,
         replyToText: String? = null,
         forwardedFrom: String? = null,
+        poll: Poll? = null,
     ) {
         val clean = senderUsername.trimStart('@')
         if (clean.isBlank()) return
@@ -214,6 +299,7 @@ class AppRepository(private val store: VaultStore) {
             replyToId = replyToId,
             replyToText = replyToText,
             forwardedFrom = forwardedFrom,
+            poll = poll,
         )
         updateVault { data ->
             data.copy(
@@ -426,6 +512,188 @@ class AppRepository(private val store: VaultStore) {
         updateVault { it.copy(stickerPacks = it.stickerPacks + pack) }
     }
 
+    fun toggleStickerFavorite(sticker: String) {
+        updateVault { data ->
+            val favorites = data.stickerFavorites.toMutableList()
+            if (!favorites.remove(sticker)) favorites.add(sticker)
+            data.copy(stickerFavorites = favorites)
+        }
+    }
+
+    // ------------------------------------------------------------- folders
+
+    fun saveFolder(folder: ChatFolder) {
+        updateVault { data ->
+            val exists = data.chatFolders.any { it.id == folder.id }
+            data.copy(
+                chatFolders = if (exists) {
+                    data.chatFolders.map { if (it.id == folder.id) folder else it }
+                } else {
+                    data.chatFolders + folder
+                },
+            )
+        }
+    }
+
+    fun deleteFolder(folderId: String) {
+        updateVault { data ->
+            data.copy(chatFolders = data.chatFolders.filterNot { it.id == folderId })
+        }
+    }
+
+    // ---------------------------------------------------------- call log
+
+    fun addCall(
+        chatId: String,
+        seconds: Int,
+        video: Boolean = false,
+        outgoing: Boolean = true,
+        missed: Boolean = false,
+    ) {
+        val chat = chat(chatId) ?: return
+        val entry = CallEntry(
+            id = UUID.randomUUID().toString(),
+            chatId = chatId,
+            title = chat.title,
+            avatarColor = chat.avatarColor,
+            outgoing = outgoing,
+            missed = missed,
+            timestamp = System.currentTimeMillis(),
+            seconds = seconds,
+            video = video,
+        )
+        updateVault { data ->
+            data.copy(callLog = (listOf(entry) + data.callLog).take(300))
+        }
+    }
+
+    fun clearCallLog() {
+        updateVault { it.copy(callLog = emptyList()) }
+    }
+
+    // ------------------------------------------------------------ stories
+
+    fun addStory(localUri: String, caption: String): Story? {
+        val mine = _vault.value.profile
+        val username = mine.username.ifBlank { "me" }
+        val story = Story(
+            id = UUID.randomUUID().toString(),
+            authorUsername = username,
+            authorName = mine.displayName.ifBlank { "Вы" },
+            avatarColor = mine.avatarColor,
+            localUri = localUri,
+            caption = caption,
+            createdAt = System.currentTimeMillis(),
+            viewed = true,
+            mine = true,
+        )
+        updateVault { it.copy(stories = listOf(story) + it.stories) }
+        return story
+    }
+
+    fun markStoryViewed(storyId: String) {
+        updateVault { data ->
+            data.copy(
+                stories = data.stories.map {
+                    if (it.id == storyId) it.copy(viewed = true) else it
+                },
+            )
+        }
+    }
+
+    fun deleteStory(storyId: String) {
+        updateVault { data ->
+            val target = data.stories.firstOrNull { it.id == storyId }
+            val uri = target?.localUri
+            if (uri != null && uri.startsWith("file:")) {
+                runCatching { java.io.File(java.net.URI(uri)).delete() }
+            }
+            data.copy(stories = data.stories.filterNot { it.id == storyId })
+        }
+    }
+
+    fun archiveStory(storyId: String) {
+        updateVault { data ->
+            data.copy(
+                stories = data.stories.map {
+                    if (it.id == storyId) it.copy(archived = true) else it
+                },
+            )
+        }
+    }
+
+    // ----------------------------------------------------------- reactions
+
+    fun toggleReaction(chatId: String, messageId: String, emoji: String) {
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty().map { message ->
+                if (message.id != messageId) return@map message
+                val old = message.myReaction
+                val reactions = message.reactions.toMutableMap()
+                if (old != null) {
+                    reactions[old] = (reactions[old] ?: 1) - 1
+                    if (reactions[old]!! <= 0) reactions.remove(old)
+                }
+                if (old != emoji) {
+                    reactions[emoji] = (reactions[emoji] ?: 0) + 1
+                }
+                message.copy(
+                    reactions = reactions,
+                    myReaction = if (old == emoji) null else emoji,
+                )
+            }
+            data.copy(messages = data.messages + (chatId to list))
+        }
+    }
+
+    fun applyRemoteReaction(peerUsername: String, messageId: String, emoji: String) {
+        val chat = chatByUsername(peerUsername) ?: return
+        updateVault { data ->
+            val list = data.messages[chat.id].orEmpty().map { message ->
+                if (message.id != messageId) return@map message
+                val reactions = message.reactions.toMutableMap()
+                reactions[emoji] = (reactions[emoji] ?: 0) + 1
+                message.copy(reactions = reactions)
+            }
+            data.copy(messages = data.messages + (chat.id to list))
+        }
+    }
+
+    // -------------------------------------------------------------- polls
+
+    fun votePoll(chatId: String, messageId: String, optionId: String) {
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty().map { message ->
+                val poll = message.poll
+                if (message.id != messageId || poll == null || poll.closed) return@map message
+
+                val oldVotes = poll.myVotes
+                val newVotes = when {
+                    optionId in oldVotes -> oldVotes - optionId
+                    poll.multiple -> oldVotes + optionId
+                    else -> listOf(optionId)
+                }
+                val options = poll.options.map { option ->
+                    val delta = (if (option.id in newVotes) 1 else 0) -
+                        (if (option.id in oldVotes) 1 else 0)
+                    if (delta == 0) option else option.copy(votes = (option.votes + delta).coerceAtLeast(0))
+                }
+                message.copy(poll = poll.copy(options = options, myVotes = newVotes))
+            }
+            data.copy(
+                messages = data.messages + (chatId to list),
+                chats = data.chats.map { chat ->
+                    if (chat.id == chatId) {
+                        val last = list.lastOrNull()
+                        if (last?.id == messageId) {
+                            chat.copy(lastMessage = preview(last), lastTimestamp = last.timestamp)
+                        } else chat
+                    } else chat
+                },
+            )
+        }
+    }
+
     // ------------------------------------------------------------- profile
 
     fun updateProfile(displayName: String, username: String, phone: String, bio: String) {
@@ -476,6 +744,7 @@ class AppRepository(private val store: VaultStore) {
         MessageKind.FILE -> "📎 ${message.attachment?.name ?: "Файл"}"
         MessageKind.SYSTEM -> message.text
         MessageKind.CALL -> "📞 Звонок"
+        MessageKind.POLL -> "📊 ${message.poll?.question ?: "Опрос"}"
     }
 
     fun applySettingsToProfile(settings: AppSettings) {

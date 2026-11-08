@@ -27,9 +27,12 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Refresh
@@ -98,6 +101,9 @@ fun SettingsScreen(
     onCheckServer: () -> Unit,
     onResetDemo: () -> Unit,
     onWipe: () -> Unit,
+    onOpenChatSettings: () -> Unit = {},
+    onOpenFolders: () -> Unit = {},
+    onOpenStickers: () -> Unit = {},
 ) {
     var editingProfile by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
@@ -306,6 +312,27 @@ fun SettingsScreen(
                 subtitle = "Как в Telegram и VK",
                 checked = settings.darkTheme,
                 onCheckedChange = onDarkTheme,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingsLinkRow(
+                icon = Icons.Filled.Palette,
+                title = "Настройки чатов",
+                subtitle = "Размер текста, обои, углы пузырей",
+                onClick = onOpenChatSettings,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingsLinkRow(
+                icon = Icons.Filled.Folder,
+                title = "Папки с чатами",
+                subtitle = "Фильтры и группировка списка чатов",
+                onClick = onOpenFolders,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingsLinkRow(
+                icon = Icons.Filled.EmojiEmotions,
+                title = "Стикеры",
+                subtitle = "Наборы, избранное, установка",
+                onClick = onOpenStickers,
             )
         }
 
@@ -590,6 +617,33 @@ private fun InfoRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@Composable
+private fun SettingsLinkRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

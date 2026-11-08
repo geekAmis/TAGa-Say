@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,17 +16,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,12 +43,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tagasay.app.data.model.Chat
+import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.Story
+import com.tagasay.app.data.model.UserProfile
 import com.tagasay.app.ui.components.Avatar
 import com.tagasay.app.ui.components.SearchField
 import com.tagasay.app.ui.components.UnreadBadge
@@ -51,15 +62,27 @@ import com.tagasay.app.ui.theme.TagaPurple
 @Composable
 fun ChatsScreen(
     chats: List<Chat>,
+    folders: List<ChatFolder>,
+    stories: List<Story>,
+    profile: UserProfile,
     onOpenChat: (String) -> Unit,
     onNewChat: () -> Unit,
-    onOpenProfile: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenFolders: () -> Unit,
+    onOpenCalls: () -> Unit,
+    onOpenChannels: () -> Unit,
+    onOpenStories: () -> Unit,
+    onMarkStoryViewed: (String) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    var folderId by remember { mutableStateOf<String?>(null) }
+    var viewingStory by remember { mutableStateOf<String?>(null) }
+    val folder = folders.firstOrNull { it.id == folderId }
+    val q = query.trim()
 
-    val filtered = remember(chats, query) {
-        val q = query.trim()
+    val filtered = remember(chats, folder, q) {
         chats
+            .filter { chat -> folder == null || chat.inFolder(folder) }
             .filter {
                 q.isBlank() ||
                     it.title.contains(q, ignoreCase = true) ||
@@ -67,6 +90,10 @@ fun ChatsScreen(
                     it.username.contains(q, ignoreCase = true)
             }
             .sortedWith(compareByDescending<Chat> { it.pinned }.thenByDescending { it.lastTimestamp })
+    }
+
+    val visibleStories = remember(stories) {
+        stories.filterNot { it.archived || it.expired }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -78,7 +105,7 @@ fun ChatsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 20.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
+                    .padding(start = 20.dp, end = 6.dp, top = 6.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -102,15 +129,26 @@ fun ChatsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Avatar(
-                    name = "Вы",
-                    color = 0xFF7B61FF,
-                    size = 40.dp,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable(onClick = onOpenProfile),
-                )
+                IconButton(onClick = onOpenCalls) {
+                    Icon(Icons.Filled.Call, contentDescription = "Звонки")
+                }
+                IconButton(onClick = onOpenChannels) {
+                    Icon(Icons.Filled.Campaign, contentDescription = "Каналы")
+                }
+                IconButton(onClick = onOpenSearch) {
+                    Icon(Icons.Filled.Search, contentDescription = "Поиск")
+                }
             }
+
+            Spacer(Modifier.height(2.dp))
+            StoriesRow(
+                stories = visibleStories,
+                myName = profile.displayName.ifBlank { "Вы" },
+                myColor = profile.avatarColor,
+                onOpenMine = onOpenStories,
+                onOpenStory = { viewingStory = it },
+            )
+            Spacer(Modifier.height(10.dp))
 
             SearchField(
                 value = query,
@@ -119,18 +157,67 @@ fun ChatsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
 
-            Spacer(Modifier.height(10.dp))
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 8.dp,
-                    end = 8.dp,
-                    bottom = 96.dp,
-                ),
+            Spacer(Modifier.height(8.dp))
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(filtered, key = { it.id }) { chat ->
-                    ChatRow(chat = chat, onClick = { onOpenChat(chat.id) })
+                item {
+                    FolderChip(
+                        title = "Все",
+                        emoji = "",
+                        selected = folderId == null,
+                        onClick = { folderId = null },
+                    )
+                }
+                items(folders, key = { it.id }) { item ->
+                    FolderChip(
+                        title = item.title,
+                        emoji = item.emoji,
+                        selected = folderId == item.id,
+                        onClick = { folderId = item.id },
+                    )
+                }
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(50),
+                        modifier = Modifier.clickable(onClick = onOpenFolders),
+                    ) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = "Настроить папки",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp).size(18.dp),
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            if (filtered.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Здесь пока нет чатов", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (folder != null) "Измените папку или создайте новый чат." else "Начните переписку во вкладке «Контакты».",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 96.dp),
+                ) {
+                    items(filtered, key = { it.id }) { chat ->
+                        ChatRow(chat = chat, onClick = { onOpenChat(chat.id) })
+                    }
                 }
             }
         }
@@ -138,13 +225,62 @@ fun ChatsScreen(
         ExtendedFloatingActionButton(
             onClick = onNewChat,
             containerColor = TagaPurple,
-            contentColor = androidx.compose.ui.graphics.Color.White,
+            contentColor = Color.White,
             icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
             text = { Text("Новый чат") },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 18.dp, bottom = 18.dp),
         )
+    }
+
+    viewingStory?.let { id ->
+        val viewerStories = visibleStories
+            .filterNot { it.mine }
+            .sortedBy { it.createdAt }
+        StoryViewer(
+            stories = viewerStories.ifEmpty { visibleStories },
+            startId = id,
+            onClose = { viewingStory = null },
+            onViewed = onMarkStoryViewed,
+        )
+    }
+}
+
+@Composable
+private fun FolderChip(
+    title: String,
+    emoji: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        shape = RoundedCornerShape(50),
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (emoji.isNotBlank()) {
+                Text(emoji, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.width(5.dp))
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
     }
 }
 
@@ -206,7 +342,12 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
                     Spacer(Modifier.width(2.dp))
                 }
                 Text(
-                    text = previewText(chat.lastMessage.removePrefix("📷 ").removePrefix("📎 "), 46),
+                    text = previewText(
+                        chat.lastMessage
+                            .removePrefix("📷 ").removePrefix("📎 ").removePrefix("🎬 ")
+                            .removePrefix("🎤 ").removePrefix("📊 "),
+                        46,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (chat.unread > 0) {
                         MaterialTheme.colorScheme.onSurface
@@ -241,4 +382,11 @@ private fun ChatRow(chat: Chat, onClick: () -> Unit) {
             }
         }
     }
+}
+
+private fun Chat.inFolder(folder: ChatFolder): Boolean {
+    if (folder.unreadOnly && unread == 0) return false
+    if (folder.types.isEmpty()) return true
+    if (type in folder.types) return true
+    return folder.includeSaved && type == ChatType.SAVED
 }

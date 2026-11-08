@@ -47,13 +47,21 @@ import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Poll
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.FilePresent
 import androidx.compose.material3.AlertDialog
@@ -98,11 +106,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.app.data.model.Poll
+import com.tagasay.app.data.model.PollOption
 import com.tagasay.app.data.model.ScanReport
 import com.tagasay.app.data.model.ScanVerdict
 import com.tagasay.app.data.model.StickerPack
@@ -112,10 +123,12 @@ import com.tagasay.app.ui.components.formatBytes
 import com.tagasay.app.ui.components.formatDateSeparator
 import com.tagasay.app.ui.components.formatDuration
 import com.tagasay.app.ui.components.formatTime
+import com.tagasay.app.ui.theme.ChatPalette
 import com.tagasay.app.ui.theme.TagaAmber
 import com.tagasay.app.ui.theme.TagaGreen
 import com.tagasay.app.ui.theme.TagaPurple
 import com.tagasay.app.ui.theme.TagaRed
+import com.tagasay.app.ui.theme.chatPalette
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
@@ -128,17 +141,25 @@ fun ChatScreen(
     messages: List<Message>,
     profile: UserProfile,
     stickerPacks: List<StickerPack>,
+    stickerFavorites: List<String>,
+    settings: AppSettings,
     allChats: List<Chat>,
     onBack: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenMedia: () -> Unit,
     onCall: () -> Unit,
-    onSend: (String, MessageKind, Attachment?, String?, String?, String?) -> Unit,
+    onSend: (String, MessageKind, Attachment?, String?, String?, String?, Poll?) -> Unit,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onForward: (String, String) -> Unit,
     onMarkRead: () -> Unit,
     onInspect: suspend (Uri) -> ScanReport,
     onDownloadAttachment: (String) -> Unit,
+    onVotePoll: (String, String) -> Unit,
+    onToggleStickerFavorite: (String) -> Unit,
+    onManageStickers: () -> Unit,
+    onReact: (String, String) -> Unit,
 ) {
     var input by remember(chat.id) { mutableStateOf("") }
     var editing by remember(chat.id) { mutableStateOf<Message?>(null) }
@@ -146,9 +167,15 @@ fun ChatScreen(
     var selected by remember { mutableStateOf<Message?>(null) }
     var pending by remember { mutableStateOf<PendingAttachment?>(null) }
     var showStickers by remember { mutableStateOf(false) }
+    var stickerFavoritesTab by remember { mutableStateOf(false) }
+    var showAttach by remember { mutableStateOf(false) }
+    var showPoll by remember { mutableStateOf(false) }
+    var stickerMenu by remember { mutableStateOf<String?>(null) }
     var forwarding by remember { mutableStateOf<Message?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     val requestedDownloads = remember(chat.id) { mutableSetOf<String>() }
+    val palette = chatPalette(settings.chatTheme, settings.chatWallpaper, settings.darkTheme)
+    val textSize = settings.messageTextSize.sp
 
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
@@ -196,7 +223,7 @@ fun ChatScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
@@ -206,7 +233,10 @@ fun ChatScreen(
                     }
                 },
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable(onClick = onOpenProfile),
+                    ) {
                         Avatar(
                             name = chat.title,
                             color = chat.avatarColor,
@@ -239,13 +269,23 @@ fun ChatScreen(
                     IconButton(onClick = onCall) {
                         Icon(Icons.Filled.Call, contentDescription = "Позвонить")
                     }
-                    IconButton(onClick = onOpenProfile) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "Профиль")
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Меню чата")
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(
                             text = { Text("Профиль") },
                             onClick = { showMenu = false; onOpenProfile() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Медиа и файлы") },
+                            onClick = { showMenu = false; onOpenMedia() },
+                            leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Настройки чата") },
+                            onClick = { showMenu = false; onOpenSettings() },
+                            leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                         )
                         DropdownMenuItem(
                             text = { Text("Видеозвонок") },
@@ -314,7 +354,7 @@ fun ChatScreen(
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = { picker.launch("*/*") }) {
+                        IconButton(onClick = { showAttach = true }) {
                             Icon(
                                 Icons.Filled.AttachFile,
                                 contentDescription = "Прикрепить файл",
@@ -364,23 +404,27 @@ fun ChatScreen(
                                     val text = input.trim()
                                     val target = editing
                                     when {
-                                        target != null -> {
+                                        target != null && text.isNotEmpty() -> {
                                             onEdit(target.id, text)
                                             editing = null
                                             input = ""
                                         }
                                         text.isNotEmpty() -> {
-                                            onSend(text, MessageKind.TEXT, null, null, replying?.text, replying?.id)
+                                            onSend(text, MessageKind.TEXT, null, null, replying?.text, replying?.id, null)
                                             input = ""
                                             replying = null
                                         }
+                                        else -> picker.launch("image/*")
                                     }
                                 },
-                                enabled = input.isNotBlank(),
                             ) {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Отправить",
+                                    if (input.isBlank() && editing == null) {
+                                        Icons.Filled.PhotoCamera
+                                    } else {
+                                        Icons.AutoMirrored.Filled.Send
+                                    },
+                                    contentDescription = if (input.isBlank()) "Камера" else "Отправить",
                                     tint = Color.White,
                                 )
                             }
@@ -394,7 +438,8 @@ fun ChatScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .background(palette.background),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -460,8 +505,13 @@ fun ChatScreen(
                     MessageBubble(
                         message = message,
                         showAuthor = chat.type != ChatType.PRIVATE && !message.isMine,
+                        palette = palette,
+                        bubbleRadius = settings.bubbleRadius,
+                        textSize = textSize,
                         onLongPress = { selected = message },
                         onAttachmentClick = openAttachment,
+                        onVote = { optionId -> onVotePoll(message.id, optionId) },
+                        onReact = { emoji -> onReact(message.id, emoji) },
                     )
                 }
             }
@@ -485,6 +535,33 @@ fun ChatScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    listOf("👍", "❤️", "🔥", "😂", "😮", "😢").forEach { emoji ->
+                        Surface(
+                            color = if (message.myReaction == emoji) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.clickable {
+                                onReact(message.id, emoji)
+                                selected = null
+                            },
+                        ) {
+                            Text(
+                                emoji,
+                                fontSize = 22.sp,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
                 ActionRow(Icons.Filled.Reply, "Ответить") {
                     replying = message
                     selected = null
@@ -499,6 +576,17 @@ fun ChatScreen(
                 ActionRow(Icons.Filled.Forward, "Переслать") {
                     forwarding = message
                     selected = null
+                }
+                if (message.kind == MessageKind.STICKER && !message.sticker.isNullOrBlank()) {
+                    val sticker = message.sticker.orEmpty()
+                    val favorite = sticker in stickerFavorites
+                    ActionRow(
+                        if (favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        if (favorite) "Убрать из избранного" else "В избранное",
+                    ) {
+                        onToggleStickerFavorite(sticker)
+                        selected = null
+                    }
                 }
                 if (message.isMine && message.kind == MessageKind.TEXT) {
                     ActionRow(Icons.Filled.Edit, "Редактировать") {
@@ -572,6 +660,11 @@ fun ChatScreen(
 
     if (showStickers) {
         val installed = stickerPacks.filter { it.installed }
+        val stickers = if (stickerFavoritesTab) {
+            stickerFavorites
+        } else {
+            installed.flatMap { it.stickers }.distinct()
+        }
         ModalBottomSheet(
             onDismissRequest = { showStickers = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -582,27 +675,70 @@ fun ChatScreen(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp),
             ) {
-                Text("Стикеры", style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(10.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(6),
-                    modifier = Modifier.heightIn(max = 420.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    installed.forEach { pack ->
-                        items(pack.stickers) { sticker ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Стикеры",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            showStickers = false
+                            onManageStickers()
+                        },
+                    ) { Text("Управление") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.FilterChip(
+                        selected = !stickerFavoritesTab,
+                        onClick = { stickerFavoritesTab = false },
+                        label = { Text("Наборы") },
+                    )
+                    androidx.compose.material3.FilterChip(
+                        selected = stickerFavoritesTab,
+                        onClick = { stickerFavoritesTab = true },
+                        label = { Text("Избранное (${stickerFavorites.size})") },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                if (stickers.isEmpty()) {
+                    Text(
+                        if (stickerFavoritesTab) {
+                            "Удерживайте стикер в чате или в наборе, чтобы добавить его в избранное."
+                        } else {
+                            "Установите набор стикеров в разделе «Управление»."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 24.dp),
+                    )
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(6),
+                        modifier = Modifier.heightIn(max = 420.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(stickers) { sticker ->
                             Box(
                                 modifier = Modifier
                                     .size(52.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .combinedClickable(
                                         onClick = {
-                                            onSend("", MessageKind.STICKER, null, sticker, replying?.text, replying?.id)
+                                            onSend(
+                                                "",
+                                                MessageKind.STICKER,
+                                                null,
+                                                sticker,
+                                                replying?.text,
+                                                replying?.id,
+                                                null,
+                                            )
                                             showStickers = false
                                             replying = null
                                         },
-                                        onLongClick = {},
+                                        onLongClick = { stickerMenu = sticker },
                                     ),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -614,6 +750,93 @@ fun ChatScreen(
                 Spacer(Modifier.height(20.dp))
             }
         }
+    }
+
+    stickerMenu?.let { sticker ->
+        val favorite = sticker in stickerFavorites
+        AlertDialog(
+            onDismissRequest = { stickerMenu = null },
+            title = { Text(sticker, fontSize = 40.sp) },
+            text = { Text(if (favorite) "Стикер уже в избранном." else "Добавить стикер в избранное?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onToggleStickerFavorite(sticker)
+                        stickerMenu = null
+                    },
+                ) { Text(if (favorite) "Убрать" else "Добавить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { stickerMenu = null }) { Text("Закрыть") }
+            },
+        )
+    }
+
+    // -------------------------------------------------------- attach sheet
+
+    if (showAttach) {
+        ModalBottomSheet(
+            onDismissRequest = { showAttach = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp),
+            ) {
+                Text("Прикрепить", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    AttachOption(Icons.Filled.PhotoLibrary, "Галерея") {
+                        showAttach = false
+                        picker.launch("image/*")
+                    }
+                    AttachOption(Icons.Filled.InsertDriveFile, "Файл") {
+                        showAttach = false
+                        picker.launch("*/*")
+                    }
+                    AttachOption(Icons.Filled.Poll, "Опрос") {
+                        showAttach = false
+                        showPoll = true
+                    }
+                    AttachOption(Icons.Filled.Place, "Место") {
+                        showAttach = false
+                        scope.launch { snackbar.showSnackbar("Геолокация появится в следующем обновлении") }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
+    if (showPoll) {
+        PollCreateDialog(
+            onDismiss = { showPoll = false },
+            onPublish = { question, options, multiple, anonymous ->
+                onSend(
+                    "",
+                    MessageKind.POLL,
+                    null,
+                    null,
+                    replying?.text,
+                    replying?.id,
+                    Poll(
+                        question = question,
+                        options = options.mapIndexed { index, text ->
+                            PollOption("opt_$index", text)
+                        },
+                        multiple = multiple,
+                        anonymous = anonymous,
+                    ),
+                )
+                showPoll = false
+                replying = null
+            },
+        )
     }
 
     // ------------------------------------------------------------ scan dialog
@@ -694,6 +917,7 @@ fun ChatScreen(
                             null,
                             replying?.text,
                             replying?.id,
+                            null,
                         )
                         replying = null
                         pending = null
@@ -705,6 +929,127 @@ fun ChatScreen(
             },
         )
     }
+}
+
+@Composable
+private fun AttachOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(74.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(26.dp),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun PollCreateDialog(
+    onDismiss: () -> Unit,
+    onPublish: (String, List<String>, Boolean, Boolean) -> Unit,
+) {
+    var question by remember { mutableStateOf("") }
+    var options by remember { mutableStateOf(listOf("", "")) }
+    var multiple by remember { mutableStateOf(false) }
+    var anonymous by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Новый опрос") },
+        text = {
+            Column {
+                TextField(
+                    value = question,
+                    onValueChange = { question = it.take(200) },
+                    placeholder = { Text("Вопрос") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                options.forEachIndexed { index, value ->
+                    TextField(
+                        value = value,
+                        onValueChange = { next ->
+                            options = options.toMutableList().also { it[index] = next.take(80) }
+                        },
+                        placeholder = { Text("Вариант ${index + 1}") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                    )
+                }
+                if (options.size < 6) {
+                    TextButton(
+                        onClick = { options = options + "" },
+                        modifier = Modifier.align(Alignment.Start),
+                    ) {
+                        Text("+ Добавить вариант")
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Несколько ответов",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = multiple,
+                        onCheckedChange = { multiple = it },
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Анонимный опрос",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = anonymous,
+                        onCheckedChange = { anonymous = it },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = question.isNotBlank() &&
+                    options.count { it.isNotBlank() } >= 2,
+                onClick = {
+                    onPublish(
+                        question.trim(),
+                        options.map { it.trim() }.filter { it.isNotBlank() },
+                        multiple,
+                        anonymous,
+                    )
+                },
+            ) { Text("Опубликовать") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        },
+    )
 }
 
 @Composable
@@ -734,20 +1079,22 @@ private fun SystemMessage(message: Message) {
 private fun MessageBubble(
     message: Message,
     showAuthor: Boolean,
+    palette: ChatPalette,
+    bubbleRadius: Int,
+    textSize: androidx.compose.ui.unit.TextUnit,
     onLongPress: () -> Unit,
     onAttachmentClick: (Message) -> Unit,
+    onVote: (String) -> Unit,
+    onReact: (String) -> Unit,
 ) {
-    val bubbleColor = if (message.isMine) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
+    val bubbleColor = if (message.isMine) palette.outgoing else palette.incoming
     val contentColor = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
     val secondary = if (message.isMine) {
         Color.White.copy(alpha = 0.72f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val radius = bubbleRadius.dp
 
     Row(
         modifier = Modifier
@@ -760,10 +1107,10 @@ private fun MessageBubble(
                 .widthIn(max = 330.dp)
                 .clip(
                     RoundedCornerShape(
-                        topStart = 18.dp,
-                        topEnd = 18.dp,
-                        bottomStart = if (message.isMine) 18.dp else 4.dp,
-                        bottomEnd = if (message.isMine) 4.dp else 18.dp,
+                        topStart = radius,
+                        topEnd = radius,
+                        bottomStart = if (message.isMine) radius else radius / 4,
+                        bottomEnd = if (message.isMine) radius / 4 else radius,
                     ),
                 )
                 .background(bubbleColor)
@@ -823,10 +1170,18 @@ private fun MessageBubble(
                 MessageKind.AUDIO -> AudioAttachment(message, contentColor, secondary, onAttachmentClick)
                 MessageKind.FILE -> FileAttachment(message, contentColor, secondary, onAttachmentClick)
                 MessageKind.CALL -> CallAttachment(message, contentColor, secondary)
+                MessageKind.POLL -> PollAttachment(
+                    poll = message.poll,
+                    contentColor = contentColor,
+                    secondary = secondary,
+                    accent = palette.accent,
+                    textSize = textSize,
+                    onVote = onVote,
+                )
                 else -> if (message.text.isNotBlank()) {
                     Text(
                         text = message.text,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = textSize),
                         color = contentColor,
                     )
                 }
@@ -887,6 +1242,28 @@ private fun MessageBubble(
                         tint = if (message.status == MessageStatus.READ) Color(0xFFB9F6CA) else secondary,
                         modifier = Modifier.size(14.dp),
                     )
+                }
+            }
+
+            if (message.reactions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.padding(top = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    message.reactions.forEach { (emoji, count) ->
+                        Surface(
+                            color = contentColor.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.clickable { onReact(emoji) },
+                        ) {
+                            Text(
+                                "$emoji $count",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = contentColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1076,6 +1453,103 @@ private fun CallAttachment(message: Message, contentColor: Color, secondary: Col
 }
 
 @Composable
+private fun PollAttachment(
+    poll: Poll?,
+    contentColor: Color,
+    secondary: Color,
+    accent: Color,
+    textSize: androidx.compose.ui.unit.TextUnit,
+    onVote: (String) -> Unit,
+) {
+    if (poll == null) return
+    val total = poll.totalVotes
+    Column(
+        modifier = Modifier
+            .width(260.dp)
+            .padding(top = 4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Poll,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "Опрос · ${if (poll.anonymous) "анонимный" else "открытый"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = secondary,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            poll.question,
+            style = MaterialTheme.typography.bodyLarge.copy(fontSize = textSize),
+            fontWeight = FontWeight.SemiBold,
+            color = contentColor,
+        )
+        Spacer(Modifier.height(6.dp))
+        poll.options.forEach { option ->
+            val mine = option.id in poll.myVotes
+            val fraction = if (total > 0) option.votes.toFloat() / total else 0f
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .height(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(contentColor.copy(alpha = 0.10f))
+                    .clickable { onVote(option.id) },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .height(36.dp)
+                        .background(accent.copy(alpha = 0.35f)),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .height(36.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        option.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (mine) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = "Ваш голос",
+                            tint = contentColor,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        "${if (total > 0) option.votes * 100 / total else 0}% · ${option.votes}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = secondary,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${total} голосов" + if (poll.multiple) " · можно выбрать несколько" else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = secondary,
+        )
+    }
+}
+
+@Composable
 private fun ActionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
@@ -1125,4 +1599,5 @@ private fun previewOf(message: Message): String = when (message.kind) {
     MessageKind.FILE -> "Файл ${message.attachment?.name.orEmpty()}"
     MessageKind.SYSTEM -> message.text
     MessageKind.CALL -> "Звонок"
+    MessageKind.POLL -> "Опрос ${message.poll?.question.orEmpty()}"
 }

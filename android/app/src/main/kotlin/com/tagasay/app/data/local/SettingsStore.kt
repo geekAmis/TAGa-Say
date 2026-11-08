@@ -3,6 +3,7 @@ package com.tagasay.app.data.local
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tagasay.app.BuildConfig
@@ -26,6 +27,10 @@ class SettingsStore(private val context: Context) {
         val serverUrl = stringPreferencesKey("server_url")
         val showTyping = booleanPreferencesKey("show_typing")
         val screenSecurity = booleanPreferencesKey("screen_security")
+        val messageTextSize = intPreferencesKey("message_text_size")
+        val bubbleRadius = intPreferencesKey("bubble_radius")
+        val chatTheme = stringPreferencesKey("chat_theme")
+        val chatWallpaper = stringPreferencesKey("chat_wallpaper")
     }
 
     /**
@@ -39,38 +44,29 @@ class SettingsStore(private val context: Context) {
             BuildConfig.DEFAULT_SERVER_URL
         }
 
-    val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
-        AppSettings(
-            onboarded = prefs[Keys.onboarded] ?: false,
-            username = prefs[Keys.username] ?: "",
-            displayName = prefs[Keys.displayName] ?: "",
-            phone = prefs[Keys.phone] ?: "",
-            phoneDiscoverable = prefs[Keys.phoneDiscoverable] ?: true,
-            readReceipts = prefs[Keys.readReceipts] ?: true,
-            darkTheme = prefs[Keys.darkTheme] ?: true,
-            notifications = prefs[Keys.notifications] ?: true,
-            serverUrl = effectiveServerUrl(prefs[Keys.serverUrl]),
-            showTyping = prefs[Keys.showTyping] ?: true,
-            screenSecurity = prefs[Keys.screenSecurity] ?: true,
-        )
-    }
+    val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs -> prefs.toSettings() }
+
+    private fun androidx.datastore.preferences.core.Preferences.toSettings(): AppSettings = AppSettings(
+        onboarded = this[Keys.onboarded] ?: false,
+        username = this[Keys.username] ?: "",
+        displayName = this[Keys.displayName] ?: "",
+        phone = this[Keys.phone] ?: "",
+        phoneDiscoverable = this[Keys.phoneDiscoverable] ?: true,
+        readReceipts = this[Keys.readReceipts] ?: true,
+        darkTheme = this[Keys.darkTheme] ?: true,
+        notifications = this[Keys.notifications] ?: true,
+        serverUrl = effectiveServerUrl(this[Keys.serverUrl]),
+        showTyping = this[Keys.showTyping] ?: true,
+        screenSecurity = this[Keys.screenSecurity] ?: true,
+        messageTextSize = this[Keys.messageTextSize] ?: 16,
+        bubbleRadius = this[Keys.bubbleRadius] ?: 18,
+        chatTheme = this[Keys.chatTheme] ?: "violet",
+        chatWallpaper = this[Keys.chatWallpaper] ?: "default",
+    )
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         context.settingsDataStore.edit { prefs ->
-            val current = AppSettings(
-                onboarded = prefs[Keys.onboarded] ?: false,
-                username = prefs[Keys.username] ?: "",
-                displayName = prefs[Keys.displayName] ?: "",
-                phone = prefs[Keys.phone] ?: "",
-                phoneDiscoverable = prefs[Keys.phoneDiscoverable] ?: true,
-                readReceipts = prefs[Keys.readReceipts] ?: true,
-                darkTheme = prefs[Keys.darkTheme] ?: true,
-                notifications = prefs[Keys.notifications] ?: true,
-                serverUrl = effectiveServerUrl(prefs[Keys.serverUrl]),
-                showTyping = prefs[Keys.showTyping] ?: true,
-                screenSecurity = prefs[Keys.screenSecurity] ?: true,
-            )
-            val next = transform(current)
+            val next = transform(prefs.toSettings())
             prefs[Keys.onboarded] = next.onboarded
             prefs[Keys.username] = next.username
             prefs[Keys.displayName] = next.displayName
@@ -82,6 +78,10 @@ class SettingsStore(private val context: Context) {
             prefs[Keys.serverUrl] = effectiveServerUrl(next.serverUrl)
             prefs[Keys.showTyping] = next.showTyping
             prefs[Keys.screenSecurity] = next.screenSecurity
+            prefs[Keys.messageTextSize] = next.messageTextSize
+            prefs[Keys.bubbleRadius] = next.bubbleRadius
+            prefs[Keys.chatTheme] = next.chatTheme
+            prefs[Keys.chatWallpaper] = next.chatWallpaper
         }
     }
 

@@ -1,15 +1,20 @@
 package com.tagasay.app.data.local
 
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.CallEntry
 import com.tagasay.app.data.model.Channel
 import com.tagasay.app.data.model.Chat
+import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.Contact
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.app.data.model.Poll
+import com.tagasay.app.data.model.PollOption
 import com.tagasay.app.data.model.ScanVerdict
 import com.tagasay.app.data.model.StickerPack
+import com.tagasay.app.data.model.Story
 import com.tagasay.app.data.model.UserProfile
 import com.tagasay.app.data.model.VaultData
 
@@ -171,6 +176,26 @@ object SampleData {
                     text = "Залил новый билд.",
                     timestamp = now - 27 * minute,
                     isMine = false,
+                    reactions = mapOf("🔥" to 7),
+                ),
+                Message(
+                    id = "t5",
+                    chatId = "team",
+                    senderId = "lena",
+                    senderName = "Лена",
+                    text = "",
+                    timestamp = now - 20 * minute,
+                    isMine = false,
+                    kind = MessageKind.POLL,
+                    poll = Poll(
+                        question = "Что улучшить в следующем релизе?",
+                        options = listOf(
+                            PollOption("opt1", "Звонки", 6),
+                            PollOption("opt2", "Папки чатов", 4),
+                            PollOption("opt3", "Истории", 3),
+                        ),
+                        myVotes = listOf("opt2"),
+                    ),
                 ),
             ),
             "news" to listOf(
@@ -307,6 +332,95 @@ object SampleData {
             ),
         )
 
+        val folders = listOf(
+            ChatFolder(
+                id = "personal",
+                title = "Личные",
+                emoji = "👤",
+                types = listOf(ChatType.PRIVATE, ChatType.SAVED),
+                includeSaved = true,
+            ),
+            ChatFolder(
+                id = "work",
+                title = "Работа",
+                emoji = "💼",
+                types = listOf(ChatType.GROUP, ChatType.CHANNEL),
+            ),
+            ChatFolder(
+                id = "unread",
+                title = "Непрочитанные",
+                emoji = "🔔",
+                unreadOnly = true,
+            ),
+        )
+
+        val calls = listOf(
+            CallEntry(
+                id = "c1",
+                chatId = "anna",
+                title = "Анна Соколова",
+                avatarColor = 0xFFE06C9F,
+                outgoing = false,
+                timestamp = now - 35 * minute,
+                seconds = 312,
+            ),
+            CallEntry(
+                id = "c2",
+                chatId = "maxim",
+                title = "Максим Орлов",
+                avatarColor = 0xFFF2A65A,
+                outgoing = true,
+                timestamp = now - 2 * hour,
+                seconds = 84,
+            ),
+            CallEntry(
+                id = "c3",
+                chatId = "lena",
+                title = "Елена Ким",
+                avatarColor = 0xFF4CC38A,
+                outgoing = true,
+                missed = true,
+                timestamp = now - 5 * hour,
+            ),
+            CallEntry(
+                id = "c4",
+                chatId = "anna",
+                title = "Анна Соколова",
+                avatarColor = 0xFFE06C9F,
+                outgoing = true,
+                timestamp = now - 26 * hour,
+                seconds = 1_204,
+                video = true,
+            ),
+        )
+
+        val stories = listOf(
+            Story(
+                id = "st1",
+                authorUsername = "anna",
+                authorName = "Анна",
+                avatarColor = 0xFFE06C9F,
+                caption = "Новый макет профиля",
+                createdAt = now - 2 * hour,
+            ),
+            Story(
+                id = "st2",
+                authorUsername = "maxim",
+                authorName = "Максим",
+                avatarColor = 0xFFF2A65A,
+                caption = "Сборка на телефоне",
+                createdAt = now - 4 * hour,
+            ),
+            Story(
+                id = "st3",
+                authorUsername = "lena",
+                authorName = "Лена",
+                avatarColor = 0xFF4CC38A,
+                caption = "Палитра для тёмной темы",
+                createdAt = now - 7 * hour,
+            ),
+        )
+
         return VaultData(
             profile = UserProfile(
                 username = "lilanga",
@@ -320,6 +434,9 @@ object SampleData {
             contacts = contacts,
             channels = channels,
             stickerPacks = packs,
+            chatFolders = folders,
+            callLog = calls,
+            stories = stories,
         )
     }
 }

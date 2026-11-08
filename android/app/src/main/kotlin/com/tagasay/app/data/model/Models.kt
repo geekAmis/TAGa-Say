@@ -9,7 +9,7 @@ enum class ChatType { PRIVATE, GROUP, CHANNEL, SAVED }
 enum class MessageStatus { SENDING, SENT, DELIVERED, READ, FAILED }
 
 @Serializable
-enum class MessageKind { TEXT, IMAGE, VIDEO, FILE, AUDIO, STICKER, SYSTEM, CALL }
+enum class MessageKind { TEXT, IMAGE, VIDEO, FILE, AUDIO, STICKER, SYSTEM, CALL, POLL }
 
 @Serializable
 enum class ScanVerdict { SAFE, WARNING, DANGEROUS }
@@ -40,6 +40,25 @@ data class Attachment(
 )
 
 @Serializable
+data class PollOption(
+    val id: String,
+    val text: String,
+    val votes: Int = 0,
+)
+
+@Serializable
+data class Poll(
+    val question: String,
+    val options: List<PollOption>,
+    val multiple: Boolean = false,
+    val anonymous: Boolean = true,
+    val closed: Boolean = false,
+    val myVotes: List<String> = emptyList(),
+) {
+    val totalVotes: Int get() = options.sumOf { it.votes }
+}
+
+@Serializable
 data class Message(
     val id: String,
     val chatId: String,
@@ -57,6 +76,9 @@ data class Message(
     val callSeconds: Int? = null,
     val replyToText: String? = null,
     val replyToId: String? = null,
+    val poll: Poll? = null,
+    val reactions: Map<String, Int> = emptyMap(),
+    val myReaction: String? = null,
 )
 
 @Serializable
@@ -110,6 +132,53 @@ data class StickerPack(
     val installed: Boolean = false,
 )
 
+/** Папка чатов: фильтр по типу, непрочитанным и избранному. */
+@Serializable
+data class ChatFolder(
+    val id: String,
+    val title: String,
+    val emoji: String = "",
+    val types: List<ChatType> = emptyList(),
+    val unreadOnly: Boolean = false,
+    val includeSaved: Boolean = false,
+)
+
+/** Запись журнала звонков. */
+@Serializable
+data class CallEntry(
+    val id: String,
+    val chatId: String,
+    val title: String,
+    val avatarColor: Long,
+    val outgoing: Boolean,
+    val missed: Boolean = false,
+    val timestamp: Long,
+    val seconds: Int = 0,
+    val video: Boolean = false,
+)
+
+/** Локальная история (сторис): фото/видео из галереи, живёт 24 часа. */
+@Serializable
+data class Story(
+    val id: String,
+    val authorUsername: String,
+    val authorName: String,
+    val avatarColor: Long,
+    val localUri: String? = null,
+    val caption: String = "",
+    val createdAt: Long,
+    val viewed: Boolean = false,
+    val mine: Boolean = false,
+    val archived: Boolean = false,
+) {
+    val expired: Boolean
+        get() = !mine && System.currentTimeMillis() - createdAt > STORY_TTL_MS
+
+    companion object {
+        const val STORY_TTL_MS = 24L * 60 * 60 * 1000
+    }
+}
+
 @Serializable
 data class UserProfile(
     val username: String = "",
@@ -127,6 +196,10 @@ data class VaultData(
     val contacts: List<Contact> = emptyList(),
     val channels: List<Channel> = emptyList(),
     val stickerPacks: List<StickerPack> = emptyList(),
+    val stickerFavorites: List<String> = emptyList(),
+    val chatFolders: List<ChatFolder> = emptyList(),
+    val callLog: List<CallEntry> = emptyList(),
+    val stories: List<Story> = emptyList(),
 )
 
 @Serializable
@@ -142,6 +215,10 @@ data class AppSettings(
     val serverUrl: String = "",
     val showTyping: Boolean = true,
     val screenSecurity: Boolean = true,
+    val messageTextSize: Int = 16,
+    val bubbleRadius: Int = 18,
+    val chatTheme: String = "violet",
+    val chatWallpaper: String = "default",
 )
 
 data class ServerStatus(

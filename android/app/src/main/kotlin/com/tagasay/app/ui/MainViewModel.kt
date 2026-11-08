@@ -8,10 +8,12 @@ import androidx.lifecycle.viewModelScope
 import com.tagasay.app.TAGaSayApp
 import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.ChatFolder
 import com.tagasay.app.data.model.ChatType
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
+import com.tagasay.app.data.model.Poll
 import com.tagasay.app.data.model.ScanReport
 import com.tagasay.app.data.model.ServerInfo
 import com.tagasay.app.data.model.UiState
@@ -150,8 +152,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sticker: String? = null,
         replyToText: String? = null,
         replyToId: String? = null,
+        poll: Poll? = null,
     ) {
-        if (text.isBlank() && attachment == null && sticker == null) return
+        if (text.isBlank() && attachment == null && sticker == null && poll == null) return
         val message = repository.sendMessage(
             chatId = chatId,
             text = text,
@@ -160,6 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             sticker = sticker,
             replyToText = replyToText,
             replyToId = replyToId,
+            poll = poll,
         )
         val chat = repository.chat(chatId) ?: return
         if (chat.type != ChatType.PRIVATE) return
@@ -206,6 +210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     sticker = sticker,
                     replyToId = replyToId,
                     replyToText = replyToText,
+                    poll = poll,
                 )
             }
             repository.setMessageStatus(
@@ -291,6 +296,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addStickerPack(title: String, stickers: List<String>) =
         repository.addStickerPack(title, stickers)
 
+    fun toggleStickerFavorite(sticker: String) = repository.toggleStickerFavorite(sticker)
+
+    // ------------------------------------------------------- folders / calls
+
+    fun saveChatFolder(folder: ChatFolder) = repository.saveFolder(folder)
+    fun deleteChatFolder(folderId: String) = repository.deleteFolder(folderId)
+
+    fun recordCall(
+        chatId: String,
+        seconds: Int,
+        video: Boolean = false,
+        outgoing: Boolean = true,
+        missed: Boolean = false,
+    ) = repository.addCall(chatId, seconds, video, outgoing, missed)
+
+    fun clearCallLog() = repository.clearCallLog()
+
+    // -------------------------------------------------------------- stories
+
+    fun addStory(uri: Uri, caption: String) =
+        repository.addStory(uri.toString(), caption)
+
+    fun markStoryViewed(storyId: String) = repository.markStoryViewed(storyId)
+    fun deleteStory(storyId: String) = repository.deleteStory(storyId)
+    fun archiveStory(storyId: String) = repository.archiveStory(storyId)
+
+    fun votePoll(chatId: String, messageId: String, optionId: String) =
+        repository.votePoll(chatId, messageId, optionId)
+
+    fun toggleReaction(chatId: String, messageId: String, emoji: String) {
+        repository.toggleReaction(chatId, messageId, emoji)
+        if (repository.chat(chatId)?.type != ChatType.PRIVATE) return
+        viewModelScope.launch(Dispatchers.IO) {
+            syncManager.awaitChatSync()?.react(chatId, messageId, emoji)
+                ?.onFailure { Log.w("TAGaSync", "reaction failed: ${it.message}") }
+        }
+    }
+
     suspend fun inspectFile(uri: Uri): ScanReport = withContext(Dispatchers.IO) {
         container.fileInspector.inspect(uri)
     }
@@ -327,6 +370,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setNotifications(enabled: Boolean) = updateSettings { it.copy(notifications = enabled) }
     fun setShowTyping(enabled: Boolean) = updateSettings { it.copy(showTyping = enabled) }
     fun setScreenSecurity(enabled: Boolean) = updateSettings { it.copy(screenSecurity = enabled) }
+    fun setMessageTextSize(size: Int) =
+        updateSettings { it.copy(messageTextSize = size.coerceIn(12, 24)) }
+    fun setBubbleRadius(radius: Int) =
+        updateSettings { it.copy(bubbleRadius = radius.coerceIn(4, 24)) }
+    fun setChatTheme(theme: String) = updateSettings { it.copy(chatTheme = theme) }
+    fun setChatWallpaper(wallpaper: String) = updateSettings { it.copy(chatWallpaper = wallpaper) }
 
     fun updateProfile(displayName: String, username: String, phone: String, bio: String) {
         viewModelScope.launch {

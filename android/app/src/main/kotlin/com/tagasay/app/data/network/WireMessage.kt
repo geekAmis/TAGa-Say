@@ -1,6 +1,8 @@
 package com.tagasay.app.data.network
 
 import com.tagasay.app.data.model.Attachment
+import com.tagasay.app.data.model.Poll
+import com.tagasay.app.data.model.PollOption
 import com.tagasay.app.data.model.ScanVerdict
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -26,6 +28,7 @@ data class WireMessage(
     val replyToText: String? = null,
     val forwardedFrom: String? = null,
     val attachment: WireAttachment? = null,
+    val poll: WirePoll? = null,
     val ids: List<String> = emptyList(),
 ) {
     companion object {
@@ -35,6 +38,7 @@ data class WireMessage(
         const val TYPE_DELETE = "delete"
         const val TYPE_DELIVERED = "delivered"
         const val TYPE_READ = "read"
+        const val TYPE_REACTION = "reaction"
     }
 }
 
@@ -50,6 +54,20 @@ data class WireAttachment(
     val keyBase64: String,
 )
 
+@Serializable
+data class WirePollOption(
+    val id: String,
+    val text: String,
+)
+
+@Serializable
+data class WirePoll(
+    val question: String,
+    val options: List<WirePollOption>,
+    val multiple: Boolean = false,
+    val anonymous: Boolean = true,
+)
+
 fun WireAttachment.toAttachment(): Attachment = Attachment(
     name = name,
     mimeType = mimeType,
@@ -59,6 +77,20 @@ fun WireAttachment.toAttachment(): Attachment = Attachment(
         .getOrDefault(ScanVerdict.WARNING),
     mediaId = mediaId,
     keyBase64 = keyBase64,
+)
+
+fun Poll.toWire(): WirePoll = WirePoll(
+    question = question,
+    options = options.map { WirePollOption(it.id, it.text) },
+    multiple = multiple,
+    anonymous = anonymous,
+)
+
+fun WirePoll.toPoll(): Poll = Poll(
+    question = question,
+    options = options.map { PollOption(it.id, it.text) },
+    multiple = multiple,
+    anonymous = anonymous,
 )
 
 /**

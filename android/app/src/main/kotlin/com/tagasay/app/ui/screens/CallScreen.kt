@@ -53,7 +53,7 @@ import kotlinx.coroutines.delay
 fun CallScreen(
     displayName: String,
     avatarColor: Long,
-    onEnd: () -> Unit,
+    onEnd: (Int, Boolean) -> Unit,
 ) {
     var connected by remember { mutableStateOf(false) }
     var seconds by remember { mutableIntStateOf(0) }
@@ -174,7 +174,7 @@ fun CallScreen(
                     .background(TagaRed),
                 contentAlignment = Alignment.Center,
             ) {
-                androidx.compose.material3.IconButton(onClick = onEnd) {
+                androidx.compose.material3.IconButton(onClick = { onEnd(seconds, video) }) {
                     Icon(
                         Icons.Filled.CallEnd,
                         contentDescription = "Завершить звонок",

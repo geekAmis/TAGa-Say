@@ -43,6 +43,7 @@ class ChatSync(
         replyToId: String? = null,
         replyToText: String? = null,
         forwardedFrom: String? = null,
+        poll: com.tagasay.app.data.model.Poll? = null,
     ): Result<Unit> = runCatching {
         val chat = directChat(chatId)
         sendWire(
@@ -57,6 +58,7 @@ class ChatSync(
                 replyToId = replyToId,
                 replyToText = replyToText,
                 forwardedFrom = forwardedFrom,
+                poll = poll?.toWire(),
             ),
         )
     }
@@ -150,6 +152,19 @@ class ChatSync(
                 id = messageId,
                 timestamp = System.currentTimeMillis(),
                 text = text,
+            ),
+        )
+    }
+
+    suspend fun react(chatId: String, messageId: String, emoji: String): Result<Unit> = runCatching {
+        val chat = directChat(chatId)
+        sendWire(
+            chat,
+            WireMessage(
+                type = WireMessage.TYPE_REACTION,
+                id = messageId,
+                timestamp = System.currentTimeMillis(),
+                text = emoji,
             ),
         )
     }
@@ -271,6 +286,7 @@ class ChatSync(
                 replyToId = wire.replyToId,
                 replyToText = wire.replyToText,
                 forwardedFrom = wire.forwardedFrom,
+                poll = wire.poll?.toPoll(),
             )
             true
         }
@@ -298,6 +314,13 @@ class ChatSync(
 
         WireMessage.TYPE_DELETE -> {
             repository.applyRemoteDelete(sender, wire.id)
+            false
+        }
+
+        WireMessage.TYPE_REACTION -> {
+            if (wire.text.isNotBlank()) {
+                repository.applyRemoteReaction(sender, wire.id, wire.text)
+            }
             false
         }
 

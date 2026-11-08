@@ -1,6 +1,7 @@
 package com.tagasay.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,9 +23,12 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
@@ -34,8 +38,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +56,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tagasay.app.ui.components.Avatar
 import com.tagasay.app.ui.components.SectionCard
 import com.tagasay.app.ui.theme.TagaBlue
@@ -68,8 +79,14 @@ fun ProfileScreen(
     onBack: () -> Unit,
     onMessage: () -> Unit,
     onCall: () -> Unit,
+    storiesCount: Int = 0,
+    onOpenStories: () -> Unit = {},
+    showBack: Boolean = true,
+    onEdit: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
+    var profileTab by remember { mutableStateOf(0) }
 
     Column(
         modifier = Modifier
@@ -84,13 +101,15 @@ fun ProfileScreen(
                     Brush.verticalGradient(listOf(TagaPurple.copy(alpha = 0.45f), Color.Transparent)),
                 ),
         ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(8.dp),
-            ) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Назад")
+            if (showBack) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .padding(8.dp),
+                ) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Назад")
+                }
             }
             Column(
                 modifier = Modifier
@@ -161,24 +180,54 @@ fun ProfileScreen(
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = onMessage,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = TagaPurple),
-                    ) {
-                        Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Написать")
-                    }
-                    OutlinedButton(
-                        onClick = onCall,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Icon(Icons.Filled.Call, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Позвонить")
+                    if (isSelf) {
+                        OutlinedButton(
+                            onClick = onEdit,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Фото")
+                        }
+                        OutlinedButton(
+                            onClick = onEdit,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Изменить")
+                        }
+                        OutlinedButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Настройки")
+                        }
+                    } else {
+                        Button(
+                            onClick = onMessage,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = TagaPurple),
+                        ) {
+                            Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Написать")
+                        }
+                        OutlinedButton(
+                            onClick = onCall,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Icon(Icons.Filled.Call, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Позвонить")
+                        }
                     }
                 }
             }
@@ -305,6 +354,98 @@ fun ProfileScreen(
                     }
                 }
             }
+            Spacer(Modifier.height(14.dp))
+
+            if (isSelf) {
+                SectionCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenStories)
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(TagaPurple.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("📖", fontSize = 20.sp)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Мои истории", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (storiesCount > 0) {
+                                    "$storiesCount публикаций · видны 24 часа"
+                                } else {
+                                    "Опубликуйте фото или видео в профиле"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text("Открыть", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
+            if (isSelf) {
+                TabRow(selectedTabIndex = profileTab) {
+                    Tab(
+                        selected = profileTab == 0,
+                        onClick = { profileTab = 0 },
+                        text = { Text("Публикации") },
+                    )
+                    Tab(
+                        selected = profileTab == 1,
+                        onClick = { profileTab = 1 },
+                        text = { Text("Архив") },
+                    )
+                    Tab(
+                        selected = profileTab == 2,
+                        onClick = { profileTab = 2 },
+                        text = { Text("Подарки") },
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        when (profileTab) {
+                            0 -> "📷"
+                            1 -> "🗂️"
+                            else -> "🎁"
+                        },
+                        fontSize = 46.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        when (profileTab) {
+                            0 -> "Публикаций пока нет"
+                            1 -> "Архив пуст"
+                            else -> "Подарков пока нет"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        when (profileTab) {
+                            0 -> "Фото, видео и истории появятся здесь."
+                            1 -> "Сюда попадут скрытые публикации."
+                            else -> "Подарки от собеседников появятся здесь."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             Spacer(Modifier.height(28.dp))
         }
     }
