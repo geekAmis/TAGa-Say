@@ -32,9 +32,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -50,6 +52,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -61,6 +64,7 @@ import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Videocam
@@ -102,14 +106,23 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tagasay.app.data.model.Attachment
 import com.tagasay.app.data.model.AppSettings
+import com.tagasay.app.data.model.BotEntity
+import com.tagasay.app.data.model.BotInfo
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.ChatType
+import com.tagasay.app.data.model.InlineKeyboardButton
 import com.tagasay.app.data.model.Message
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.MessageStatus
@@ -119,6 +132,7 @@ import com.tagasay.app.data.model.ScanReport
 import com.tagasay.app.data.model.ScanVerdict
 import com.tagasay.app.data.model.StickerPack
 import com.tagasay.app.data.model.UserProfile
+import com.tagasay.app.data.model.validBotEntities
 import com.tagasay.app.ui.components.Avatar
 import com.tagasay.app.ui.components.formatBytes
 import com.tagasay.app.ui.components.formatDateSeparator
@@ -134,6 +148,26 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 private data class PendingAttachment(val uri: Uri, val report: ScanReport)
+
+/** Запасной список команд BotFather, если карточка ещё не отдала commands. */
+private val BOTFATHER_COMMANDS = listOf(
+    com.tagasay.app.data.model.BotCommandInfo("start", "Начать и показать меню"),
+    com.tagasay.app.data.model.BotCommandInfo("help", "Список команд"),
+    com.tagasay.app.data.model.BotCommandInfo("newbot", "Создать бота"),
+    com.tagasay.app.data.model.BotCommandInfo("mybots", "Мои боты и карточки"),
+    com.tagasay.app.data.model.BotCommandInfo("token", "Показать токен"),
+    com.tagasay.app.data.model.BotCommandInfo("revoke", "Отозвать токен"),
+    com.tagasay.app.data.model.BotCommandInfo("deletebot", "Удалить бота"),
+    com.tagasay.app.data.model.BotCommandInfo("setname", "Имя бота"),
+    com.tagasay.app.data.model.BotCommandInfo("setabouttext", "Короткое описание"),
+    com.tagasay.app.data.model.BotCommandInfo("setdescription", "Описание до /start"),
+    com.tagasay.app.data.model.BotCommandInfo("setcommands", "Команды бота"),
+    com.tagasay.app.data.model.BotCommandInfo("deletecommands", "Очистить команды"),
+    com.tagasay.app.data.model.BotCommandInfo("setprivacy", "Приватность в группах"),
+    com.tagasay.app.data.model.BotCommandInfo("setjoingroups", "Добавление в группы"),
+    com.tagasay.app.data.model.BotCommandInfo("setinline", "Inline-режим"),
+    com.tagasay.app.data.model.BotCommandInfo("cancel", "Отменить диалог"),
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -162,6 +196,13 @@ fun ChatScreen(
     onToggleStickerFavorite: (String) -> Unit,
     onManageStickers: () -> Unit,
     onReact: (String, String) -> Unit,
+    bot: BotInfo? = null,
+    botNotice: String? = null,
+    onBotNoticeShown: () -> Unit = {},
+    onBotCallback: (String, String) -> Unit = { _, _ -> },
+    onBotOpenUrl: (String) -> Unit = {},
+    onBotWarningShown: () -> Unit = {},
+    onBotBlockToggle: () -> Unit = {},
 ) {
     var input by remember(chat.id) { mutableStateOf("") }
     var editing by remember(chat.id) { mutableStateOf<Message?>(null) }
@@ -175,13 +216,17 @@ fun ChatScreen(
     var stickerMenu by remember { mutableStateOf<String?>(null) }
     var forwarding by remember { mutableStateOf<Message?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+    var showBotCommands by remember { mutableStateOf(false) }
+    var showBotWarning by remember(chat.id) { mutableStateOf(false) }
     val requestedDownloads = remember(chat.id) { mutableSetOf<String>() }
     val palette = chatPalette(settings.chatTheme, settings.chatWallpaper, settings.darkTheme)
     val textSize = settings.messageTextSize.sp
-    val canPost = chat.type != ChatType.CHANNEL ||
+    val isBot = chat.type == ChatType.BOT
+    val botDisabled = isBot && (bot?.deleted == true || bot?.blocked == true)
+    val canPost = !botDisabled && (chat.type != ChatType.CHANNEL ||
         chat.ownerUsername.isBlank() ||
         chat.ownerUsername.equals(settings.username, ignoreCase = true) ||
-        chat.admins.any { it.equals(settings.username, ignoreCase = true) }
+        chat.admins.any { it.equals(settings.username, ignoreCase = true) })
 
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
@@ -222,6 +267,15 @@ fun ChatScreen(
     }
 
     LaunchedEffect(chat.id) { onMarkRead() }
+    LaunchedEffect(chat.id, bot?.warningShown) {
+        if (isBot && bot != null && !bot.warningShown) showBotWarning = true
+    }
+    LaunchedEffect(botNotice) {
+        if (!botNotice.isNullOrBlank()) {
+            snackbar.showSnackbar(botNotice)
+            onBotNoticeShown()
+        }
+    }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             runCatching { listState.animateScrollToItem(messages.lastIndex) }
@@ -260,20 +314,24 @@ fun ChatScreen(
                             )
                             Text(
                                 text = when {
+                                    isBot && bot?.deleted == true -> "бот удалён"
+                                    isBot -> "бот · не E2EE"
                                     chat.type == ChatType.CHANNEL -> "канал"
                                     chat.type == ChatType.GROUP -> "группа"
                                     chat.online -> "в сети"
                                     else -> "был(а) недавно"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isBot) TagaAmber else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 },
                 actions = {
-                    IconButton(onClick = onCall) {
-                        Icon(Icons.Filled.Call, contentDescription = "Позвонить")
+                    if (!isBot) {
+                        IconButton(onClick = onCall) {
+                            Icon(Icons.Filled.Call, contentDescription = "Позвонить")
+                        }
                     }
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "Меню чата")
@@ -299,26 +357,46 @@ fun ChatScreen(
                                 leadingIcon = { Icon(Icons.Filled.Groups, contentDescription = null) },
                             )
                         }
+                        if (isBot && (bot?.username.equals("botfather", true) || !bot?.commands.isNullOrEmpty())) {
+                            DropdownMenuItem(
+                                text = { Text("Команды") },
+                                onClick = { showMenu = false; showBotCommands = true },
+                                leadingIcon = { Icon(Icons.Filled.SmartToy, contentDescription = null) },
+                            )
+                        }
+                        if (isBot) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (bot?.blocked == true) "Разблокировать бота" else "Заблокировать бота",
+                                    )
+                                },
+                                onClick = { showMenu = false; onBotBlockToggle() },
+                                leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Настройки чата") },
                             onClick = { showMenu = false; onOpenSettings() },
                             leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                         )
-                        DropdownMenuItem(
-                            text = { Text("Видеозвонок") },
-                            onClick = { showMenu = false; onCall() },
-                            leadingIcon = { Icon(Icons.Filled.Videocam, contentDescription = null) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Проверить шифрование") },
-                            onClick = {
-                                showMenu = false
-                                scope.launch {
-                                    snackbar.showSnackbar("Double Ratchet активен · PQXDH · ключи на устройстве")
-                                }
-                            },
-                            leadingIcon = { Icon(Icons.Filled.Security, contentDescription = null) },
-                        )
+                        if (!isBot) {
+                            DropdownMenuItem(
+                                text = { Text("Видеозвонок") },
+                                onClick = { showMenu = false; onCall() },
+                                leadingIcon = { Icon(Icons.Filled.Videocam, contentDescription = null) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Проверить шифрование") },
+                                onClick = {
+                                    showMenu = false
+                                    scope.launch {
+                                        snackbar.showSnackbar("Double Ratchet активен · PQXDH · ключи на устройстве")
+                                    }
+                                },
+                                leadingIcon = { Icon(Icons.Filled.Security, contentDescription = null) },
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -371,19 +449,21 @@ fun ChatScreen(
                             .padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = { showAttach = true }) {
-                            Icon(
-                                Icons.Filled.AttachFile,
-                                contentDescription = "Прикрепить файл",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        IconButton(onClick = { showStickers = true }) {
-                            Icon(
-                                Icons.Filled.EmojiEmotions,
-                                contentDescription = "Стикеры",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        if (!isBot) {
+                            IconButton(onClick = { showAttach = true }) {
+                                Icon(
+                                    Icons.Filled.AttachFile,
+                                    contentDescription = "Прикрепить файл",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            IconButton(onClick = { showStickers = true }) {
+                                Icon(
+                                    Icons.Filled.EmojiEmotions,
+                                    contentDescription = "Стикеры",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                         TextField(
                             value = input,
@@ -395,7 +475,10 @@ fun ChatScreen(
                             placeholder = {
                                 Text(
                                     when {
+                                        !canPost && bot?.deleted == true -> "Бот удалён"
+                                        !canPost && bot?.blocked == true -> "Бот заблокирован"
                                         !canPost -> "Только администраторы могут писать"
+                                        isBot -> "Сообщение боту"
                                         chat.type == ChatType.CHANNEL -> "Написать в канал"
                                         else -> "Сообщение"
                                     },
@@ -436,13 +519,13 @@ fun ChatScreen(
                                             input = ""
                                             replying = null
                                         }
-                                        else -> picker.launch("image/*")
+                                        !isBot -> picker.launch("image/*")
                                     }
                                 },
                                 enabled = canPost,
                             ) {
                                 Icon(
-                                    if (input.isBlank() && editing == null) {
+                                    if (input.isBlank() && editing == null && !isBot) {
                                         Icons.Filled.PhotoCamera
                                     } else {
                                         Icons.AutoMirrored.Filled.Send
@@ -482,16 +565,21 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                Icons.Filled.Lock,
+                                if (isBot) Icons.Filled.LockOpen else Icons.Filled.Lock,
                                 contentDescription = null,
-                                tint = TagaGreen,
+                                tint = if (isBot) TagaAmber else TagaGreen,
                                 modifier = Modifier.size(12.dp),
                             )
                             Spacer(Modifier.width(5.dp))
                             Text(
-                                "Сквозное шифрование libsignal включено",
+                                if (isBot) {
+                                    "Без сквозного шифрования: бот видит сообщения"
+                                } else {
+                                    "Сквозное шифрование libsignal включено"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isBot) TagaAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f, fill = false),
                             )
                         }
                     }
@@ -535,6 +623,8 @@ fun ChatScreen(
                         onAttachmentClick = openAttachment,
                         onVote = { optionId -> onVotePoll(message.id, optionId) },
                         onReact = { emoji -> onReact(message.id, emoji) },
+                        onBotCallback = { data -> onBotCallback(message.id, data) },
+                        onBotOpenUrl = onBotOpenUrl,
                     )
                 }
             }
@@ -564,24 +654,26 @@ fun ChatScreen(
                         .padding(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    listOf("👍", "❤️", "🔥", "😂", "😮", "😢").forEach { emoji ->
-                        Surface(
-                            color = if (message.myReaction == emoji) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            shape = RoundedCornerShape(50),
-                            modifier = Modifier.clickable {
-                                onReact(message.id, emoji)
-                                selected = null
-                            },
-                        ) {
-                            Text(
-                                emoji,
-                                fontSize = 22.sp,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            )
+                    if (!isBot) {
+                        listOf("👍", "❤️", "🔥", "😂", "😮", "😢").forEach { emoji ->
+                            Surface(
+                                color = if (message.myReaction == emoji) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier.clickable {
+                                    onReact(message.id, emoji)
+                                    selected = null
+                                },
+                            ) {
+                                Text(
+                                    emoji,
+                                    fontSize = 22.sp,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -596,11 +688,13 @@ fun ChatScreen(
                         scope.launch { snackbar.showSnackbar("Скопировано") }
                     }
                 }
-                ActionRow(Icons.Filled.Forward, "Переслать") {
-                    forwarding = message
-                    selected = null
+                if (!isBot) {
+                    ActionRow(Icons.Filled.Forward, "Переслать") {
+                        forwarding = message
+                        selected = null
+                    }
                 }
-                if (message.kind == MessageKind.STICKER && !message.sticker.isNullOrBlank()) {
+                if (!isBot && message.kind == MessageKind.STICKER && !message.sticker.isNullOrBlank()) {
                     val sticker = message.sticker.orEmpty()
                     val favorite = sticker in stickerFavorites
                     ActionRow(
@@ -611,7 +705,7 @@ fun ChatScreen(
                         selected = null
                     }
                 }
-                if (message.isMine && message.kind == MessageKind.TEXT) {
+                if (!isBot && message.isMine && message.kind == MessageKind.TEXT) {
                     ActionRow(Icons.Filled.Edit, "Редактировать") {
                         editing = message
                         input = message.text
@@ -862,6 +956,140 @@ fun ChatScreen(
         )
     }
 
+    // ----------------------------------------------------------- bot dialogs
+
+    if (showBotWarning) {
+        AlertDialog(
+            onDismissRequest = {
+                showBotWarning = false
+                onBotWarningShown()
+            },
+            icon = { Icon(Icons.Filled.SmartToy, contentDescription = null, tint = TagaAmber) },
+            title = { Text("Бот · без шифрования") },
+            text = {
+                Text(
+                    "Это бот, а не человек. Сообщения этого чата не защищены " +
+                        "сквозным шифрованием: их видит сервер и владелец бота. " +
+                        "Не отправляйте пароли, коды и личные секреты.",
+                    fontSize = 16.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBotWarning = false
+                        onBotWarningShown()
+                    },
+                ) { Text("Понятно") }
+            },
+        )
+    }
+
+    if (showBotCommands) {
+        val isBotFather = bot?.username.equals("botfather", true)
+        val commands = bot?.commands.orEmpty().ifEmpty {
+            if (isBotFather) BOTFATHER_COMMANDS else emptyList()
+        }
+        val unsupported = if (isBotFather) {
+            listOf(
+                "/setuserpic", "/deleteuserpic", "/setdomain",
+                "/newapp", "/myapps", "/editapp", "/deleteapp",
+                "/setmenubutton", "/setinlinegeo", "/authorize",
+            )
+        } else {
+            emptyList()
+        }
+        ModalBottomSheet(
+            onDismissRequest = { showBotCommands = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp),
+            ) {
+                Text(
+                    "Команды @${bot?.username.orEmpty()}",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(vertical = 10.dp),
+                )
+                if (commands.isEmpty()) {
+                    Text(
+                        "Бот пока не опубликовал список команд",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                commands.forEach { command ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable {
+                                input = "/${command.command} "
+                                showBotCommands = false
+                            }
+                            .padding(vertical = 12.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "/${command.command}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            command.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (unsupported.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Пока недоступно",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    unsupported.forEach { command ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                command,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "скоро",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
     // ------------------------------------------------------------ scan dialog
 
     pending?.let { attachment ->
@@ -1109,6 +1337,8 @@ private fun MessageBubble(
     onAttachmentClick: (Message) -> Unit,
     onVote: (String) -> Unit,
     onReact: (String) -> Unit,
+    onBotCallback: (String) -> Unit = {},
+    onBotOpenUrl: (String) -> Unit = {},
 ) {
     val bubbleColor = if (message.isMine) palette.outgoing else palette.incoming
     val contentColor = if (message.isMine) Color.White else MaterialTheme.colorScheme.onSurface
@@ -1202,11 +1432,21 @@ private fun MessageBubble(
                     onVote = onVote,
                 )
                 else -> if (message.text.isNotBlank()) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = textSize),
-                        color = contentColor,
-                    )
+                    if (message.entities.isNotEmpty()) {
+                        BotEntityText(
+                            text = message.text,
+                            entities = message.entities,
+                            color = contentColor,
+                            fontSize = textSize,
+                            onOpenUrl = onBotOpenUrl,
+                        )
+                    } else {
+                        Text(
+                            text = message.text,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = textSize),
+                            color = contentColor,
+                        )
+                    }
                 }
             }
 
@@ -1285,6 +1525,32 @@ private fun MessageBubble(
                                 color = contentColor,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                             )
+                        }
+                    }
+                }
+            }
+
+            if (message.keyboard.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    message.keyboard.forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            row.forEach { button ->
+                                BotKeyboardButton(
+                                    button = button,
+                                    contentColor = contentColor,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onBotCallback(button.callbackData) },
+                                    onOpenUrl = onBotOpenUrl,
+                                )
+                            }
                         }
                     }
                 }
@@ -1623,4 +1889,97 @@ private fun previewOf(message: Message): String = when (message.kind) {
     MessageKind.SYSTEM -> message.text
     MessageKind.CALL -> "Звонок"
     MessageKind.POLL -> "Опрос ${message.poll?.question.orEmpty()}"
+}
+
+/**
+ * Текст с форматированием Bot API. Кликабельные text_link/text_mention
+ * открываются через [onOpenUrl]; некорректные диапазоны отбрасываются.
+ */
+@Composable
+private fun BotEntityText(
+    text: String,
+    entities: List<BotEntity>,
+    color: Color,
+    fontSize: TextUnit,
+    onOpenUrl: (String) -> Unit,
+) {
+    val linkColor = Color(0xFF8FB8FF)
+    val annotated = remember(text, entities, color) {
+        buildAnnotatedString {
+            append(text)
+            validBotEntities(entities, text.length).forEach { entity ->
+                val style = when (entity.type) {
+                    "bold" -> SpanStyle(fontWeight = FontWeight.Bold)
+                    "italic" -> SpanStyle(fontStyle = FontStyle.Italic)
+                    "underline" -> SpanStyle(textDecoration = TextDecoration.Underline)
+                    "strikethrough" -> SpanStyle(textDecoration = TextDecoration.LineThrough)
+                    "code", "pre" -> SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        background = color.copy(alpha = 0.12f),
+                    )
+                    "text_link", "text_mention" -> SpanStyle(
+                        color = linkColor,
+                        textDecoration = TextDecoration.Underline,
+                    )
+                    "bot_command" -> SpanStyle(color = TagaPurple, fontWeight = FontWeight.SemiBold)
+                    else -> null
+                }
+                style?.let { addStyle(it, entity.offset, entity.end) }
+                if (entity.type == "text_link" && entity.url.isNotBlank()) {
+                    addStringAnnotation("URL", entity.url, entity.offset, entity.end)
+                }
+            }
+        }
+    }
+    ClickableText(
+        text = annotated,
+        style = MaterialTheme.typography.bodyLarge.copy(
+            fontSize = fontSize,
+            color = color,
+        ),
+        onClick = { offset ->
+            annotated.getStringAnnotations("URL", offset, offset)
+                .firstOrNull()
+                ?.item
+                ?.let(onOpenUrl)
+        },
+    )
+}
+
+@Composable
+private fun BotKeyboardButton(
+    button: InlineKeyboardButton,
+    contentColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    onOpenUrl: (String) -> Unit,
+) {
+    Surface(
+        color = contentColor.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(10.dp),
+        modifier = modifier.clickable {
+            when {
+                button.isUrl -> onOpenUrl(button.url)
+                button.isWebApp -> button.webApp?.url?.takeIf { it.isNotBlank() }?.let(onOpenUrl)
+                button.isCallback -> onClick()
+            }
+        },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 9.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = button.text,
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 16.sp,
+                color = contentColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
+    }
 }

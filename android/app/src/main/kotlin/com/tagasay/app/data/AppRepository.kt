@@ -963,6 +963,206 @@ class AppRepository(private val store: VaultStore) {
         }
     }
 
+    // ------------------------------------------------------------------- bots
+
+    fun bots(): List<com.tagasay.app.data.model.BotInfo> = _vault.value.bots
+
+    fun botInfo(username: String): com.tagasay.app.data.model.BotInfo? {
+        val clean = username.trimStart('@').lowercase()
+        return _vault.value.bots.firstOrNull { it.username.equals(clean, ignoreCase = true) }
+    }
+
+    /** Сохраняет/обновляет карточку бота и синхронизирует заголовок чата. */
+    fun saveBotInfo(info: com.tagasay.app.data.model.BotInfo) {
+        val clean = info.username.trimStart('@').lowercase()
+        if (clean.isBlank()) return
+        updateVault { data ->
+            val existing = data.bots.firstOrNull { it.username.equals(clean, ignoreCase = true) }
+            val merged = if (existing == null) {
+                info.copy(username = clean)
+            } else {
+                info.copy(
+                    username = clean,
+                    warningShown = existing.warningShown || info.warningShown,
+                    started = info.started || existing.started,
+                    blocked = info.blocked || existing.blocked,
+                )
+            }
+            data.copy(
+                bots = if (existing == null) {
+                    data.bots + merged
+                } else {
+                    data.bots.map { if (it.username.equals(clean, ignoreCase = true)) merged else it }
+                },
+                chats = data.chats.map { chat ->
+                    if (chat.type == ChatType.BOT && chat.username.equals(clean, ignoreCase = true)) {
+                        chat.copy(
+                            title = merged.title,
+                            verified = merged.verified,
+                            description = merged.about.ifBlank { merged.description },
+                        )
+                    } else {
+                        chat
+                    }
+                },
+            )
+        }
+    }
+
+    fun markBotWarningShown(username: String) {
+        val clean = username.trimStart('@').lowercase()
+        updateVault { data ->
+            data.copy(
+                bots = data.bots.map {
+                    if (it.username.equals(clean, ignoreCase = true)) it.copy(warningShown = true) else it
+                },
+            )
+        }
+    }
+
+    fun markBotDeleted(username: String) {
+        val clean = username.trimStart('@').lowercase()
+        updateVault { data ->
+            data.copy(
+                bots = data.bots.map {
+                    if (it.username.equals(clean, ignoreCase = true)) {
+                        it.copy(status = "deleted")
+                    } else {
+                        it
+                    }
+                },
+                chats = data.chats.map { chat ->
+                    if (chat.type == ChatType.BOT && chat.username.equals(clean, ignoreCase = true)) {
+                        chat.copy(description = "Бот удалён владельцем")
+                    } else {
+                        chat
+                    }
+                },
+            )
+        }
+    }
+
+    fun setBotBlocked(username: String, blocked: Boolean) {
+        val clean = username.trimStart('@').lowercase()
+        updateVault { data ->
+            data.copy(
+                bots = data.bots.map {
+                    if (it.username.equals(clean, ignoreCase = true)) {
+                        it.copy(blocked = blocked, started = if (blocked) false else it.started)
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+    }
+
+    fun botChatId(username: String): String = "bot_${username.trimStart('@').lowercase()}"
+
+    /** Создаёт локальный бот-чат (или возвращает существующий). */
+    fun ensureBotChat(
+        username: String,
+        info: com.tagasay.app.data.model.BotInfo? = null,
+    ): String {
+        val clean = username.trimStart('@').lowercase()
+        if (clean.isBlank()) return ""
+        val id = botChatId(clean)
+        val existing = _vault.value.chats.firstOrNull { it.id == id }
+        if (existing != null) {
+            if (info != null) saveBotInfo(info)
+            return existing.id
+        }
+        val title = info?.title ?: "@$clean"
+        val chat = Chat(
+            id = id,
+            title = title,
+            username = clean,
+            type = ChatType.BOT,
+            avatarColor = BOT_AVATAR,
+            verified = info?.verified ?: false,
+            description = info?.about.orEmpty().ifBlank { info?.description.orEmpty() },
+            lastMessage = "Бот · не E2EE",
+            lastTimestamp = System.currentTimeMillis(),
+            online = true,
+        )
+        updateVault { it.copy(chats = listOf(chat) + it.chats) }
+        if (info != null) saveBotInfo(info)
+        return id
+    }
+
+    /**
+     * Входящее сообщение бота. Возвращает false для дубликата по message_id.
+     * Чат должен существовать (BotSync вызывает ensureBotChat заранее).
+     */
+    fun addBotIncomingMessage(chatId: String, message: Message): Boolean {
+        if (chatId.isBlank() || message.id.isBlank()) return false
+        if (_vault.value.messages[chatId].orEmpty().any { it.id == message.id }) return false
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty() + message
+            data.copy(
+                messages = data.messages + (chatId to list),
+                chats = data.chats.map { chat ->
+                    if (chat.id == chatId) {
+                        chat.copy(
+                            lastMessage = preview(message),
+                            lastTimestamp = message.timestamp,
+                            unread = chat.unread + 1,
+                        )
+                    } else {
+                        chat
+                    }
+                },
+            )
+        }
+        _incoming.tryEmit(message)
+        return true
+    }
+
+    fun updateBotMessage(
+        chatId: String,
+        messageId: String,
+        text: String,
+        entities: List<com.tagasay.app.data.model.BotEntity>,
+        keyboard: List<List<com.tagasay.app.data.model.InlineKeyboardButton>>,
+    ) {
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty().map { message ->
+                if (message.id == messageId && !message.isMine) {
+                    message.copy(
+                        text = text.ifBlank { message.text },
+                        entities = entities,
+                        keyboard = keyboard,
+                        edited = true,
+                    )
+                } else {
+                    message
+                }
+            }
+            data.copy(messages = data.messages + (chatId to list))
+        }
+    }
+
+    fun deleteBotMessages(chatId: String, ids: Set<String>) {
+        if (ids.isEmpty()) return
+        updateVault { data ->
+            val list = data.messages[chatId].orEmpty().filterNot { it.id in ids }
+            val last = list.lastOrNull()
+            data.copy(
+                messages = data.messages + (chatId to list),
+                chats = data.chats.map { chat ->
+                    if (chat.id == chatId) {
+                        chat.copy(
+                            lastMessage = last?.let(::preview).orEmpty(),
+                            lastTimestamp = last?.timestamp ?: chat.lastTimestamp,
+                        )
+                    } else {
+                        chat
+                    }
+                },
+            )
+        }
+    }
+
     fun resetToDemo() {
         if (!BuildConfig.DEBUG) return
         val demo = SampleData.vault()
@@ -1018,5 +1218,8 @@ class AppRepository(private val store: VaultStore) {
             0xFFE5484D,
             0xFF2FB6B0,
         )
+
+        /** Стабильный цвет бот-чатов (не зависит от random). */
+        const val BOT_AVATAR = 0xFF2FB6B0
     }
 }

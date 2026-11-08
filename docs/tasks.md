@@ -55,6 +55,9 @@ API-ключ AEZA, ключи подписи) в репозиторий не п�
     ссылки), webhook (HTTPS/SSRF/HMAC/ретраи/409), боты в комнатах
     (`Room.bots`, `my_chat_member`, `channel_post`, privacy on/off),
     обновлены docs/openapi. Тесты `server: test` — 42.
+20. Клиентская часть ботов 1.4.0: `ChatType.BOT`, BotFather в настройках и
+    поиске, бот-чат с бейджем «не E2EE», inline-кнопки, inbox long-poll,
+    optimistic send, блокировка. Версия 1.4.0, сервер 1.2.0.
 
 ## Правила
 

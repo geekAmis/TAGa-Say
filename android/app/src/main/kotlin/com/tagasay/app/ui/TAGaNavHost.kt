@@ -22,10 +22,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -34,12 +36,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.tagasay.app.data.model.BotInfo
 import com.tagasay.app.data.model.Chat
 import com.tagasay.app.data.model.MessageKind
 import com.tagasay.app.data.model.UiState
 import com.tagasay.app.data.model.UpdateStatus
 import com.tagasay.app.ui.components.Avatar
 import com.tagasay.app.ui.components.ServerBanner
+import com.tagasay.app.ui.screens.BotsScreen
 import com.tagasay.app.ui.screens.CallScreen
 import com.tagasay.app.ui.screens.CallsScreen
 import com.tagasay.app.ui.screens.ChannelsScreen
@@ -134,6 +138,19 @@ private fun MainNavHost(
     val unread = state.vault.chats.sumOf { it.unread }
     val settings = state.settings
     val vault = state.vault
+    val botHub by viewModel.botHub.collectAsState()
+    val botNotice by viewModel.botNotice.collectAsState()
+    val context = LocalContext.current
+    val openBotUrl: (String) -> Unit = { url ->
+        runCatching {
+            context.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)),
+            )
+        }
+    }
+    val botFatherCard: BotInfo? = remember(vault.bots) {
+        vault.bots.firstOrNull { it.username.equals("botfather", ignoreCase = true) }
+    }
 
     LaunchedEffect(deepLink) {
         if (!deepLink.isNullOrBlank()) {
@@ -285,6 +302,7 @@ private fun MainNavHost(
                         onOpenChatSettings = { navController.navigate("chatSettings") },
                         onOpenFolders = { navController.navigate("folders") },
                         onOpenStickers = { navController.navigate("stickers") },
+                        onOpenBots = { navController.navigate("bots") },
                     )
                 }
 
@@ -329,6 +347,31 @@ private fun MainNavHost(
                             navController.navigate("chat/$chatId")
                         },
                         onOpenChannel = { channel -> navController.navigate("chat/${channel.id}") },
+                        onOpenBots = { navController.navigate("bots") },
+                    )
+                }
+
+                composable("bots") {
+                    LaunchedEffect(Unit) {
+                        if (botHub.catalog.isEmpty() && botHub.mine.isEmpty()) {
+                            viewModel.refreshBots()
+                        }
+                    }
+                    BotsScreen(
+                        state = botHub,
+                        botFather = botFatherCard,
+                        onBack = { navController.backOrHome() },
+                        onOpenBot = { username ->
+                            viewModel.openBotChat(username) { chatId ->
+                                navController.navigate("chat/$chatId")
+                            }
+                        },
+                        onOpenBotFather = {
+                            viewModel.openBotFather { chatId ->
+                                navController.navigate("chat/$chatId")
+                            }
+                        },
+                        onRefresh = viewModel::refreshBots,
                     )
                 }
 
@@ -377,10 +420,10 @@ private fun MainNavHost(
                             allChats = vault.chats,
                             onBack = { navController.backOrHome() },
                             onOpenProfile = {
-                                val target = if (chat.type == com.tagasay.app.data.model.ChatType.PRIVATE) {
-                                    "profile/${chat.username}"
-                                } else {
-                                    "profile/me"
+                                val target = when (chat.type) {
+                                    com.tagasay.app.data.model.ChatType.PRIVATE -> "profile/${chat.username}"
+                                    com.tagasay.app.data.model.ChatType.BOT -> "bots"
+                                    else -> "profile/me"
                                 }
                                 navController.navigate(target)
                             },
@@ -415,6 +458,22 @@ private fun MainNavHost(
                             onReact = { messageId, emoji ->
                                 viewModel.toggleReaction(chatId, messageId, emoji)
                             },
+                            bot = if (chat.type == com.tagasay.app.data.model.ChatType.BOT) {
+                                botFatherCard.takeIf { chat.username.equals("botfather", true) }
+                                    ?: vault.bots.firstOrNull {
+                                        it.username.equals(chat.username, ignoreCase = true)
+                                    }
+                            } else {
+                                null
+                            },
+                            botNotice = botNotice,
+                            onBotNoticeShown = viewModel::clearBotNotice,
+                            onBotCallback = { messageId, data ->
+                                viewModel.botCallback(chatId, messageId, data)
+                            },
+                            onBotOpenUrl = openBotUrl,
+                            onBotWarningShown = { viewModel.markBotWarningShown(chat.username) },
+                            onBotBlockToggle = { viewModel.toggleBotBlocked(chatId) },
                         )
                     }
                 }

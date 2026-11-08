@@ -3,7 +3,7 @@ package com.tagasay.app.data.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class ChatType { PRIVATE, GROUP, CHANNEL, SAVED }
+enum class ChatType { PRIVATE, GROUP, CHANNEL, SAVED, BOT }
 
 @Serializable
 enum class MessageStatus { SENDING, SENT, DELIVERED, READ, FAILED }
@@ -79,6 +79,10 @@ data class Message(
     val poll: Poll? = null,
     val reactions: Map<String, Int> = emptyMap(),
     val myReaction: String? = null,
+    /** Форматирование из Bot API (bold/italic/…, смещения UTF-16). */
+    val entities: List<BotEntity> = emptyList(),
+    /** Inline-клавиатура бота: строки кнопок. */
+    val keyboard: List<List<InlineKeyboardButton>> = emptyList(),
 )
 
 @Serializable
@@ -223,6 +227,8 @@ data class VaultData(
     val chatFolders: List<ChatFolder> = emptyList(),
     val callLog: List<CallEntry> = emptyList(),
     val stories: List<Story> = emptyList(),
+    /** Карточки ботов, с которыми уже был контакт (локальный кеш). */
+    val bots: List<BotInfo> = emptyList(),
 )
 
 @Serializable
@@ -281,6 +287,14 @@ data class UiState(
     val serverInfo: ServerInfo? = null,
     val update: UpdateStatus = UpdateStatus(),
     val fingerprint: String = "",
+)
+
+/** Состояние экрана «Боты»: каталог, мои боты, загрузка. */
+data class BotHubState(
+    val catalog: List<BotInfo> = emptyList(),
+    val mine: List<BotInfo> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
 )
 
 /** Ответ `/v1/version`: политика обновления. */

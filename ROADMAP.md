@@ -5,6 +5,19 @@
 
 ---
 
+## Release 1.4.0 (боты и BotFather)
+
+- [x] Серверный BotStore, токены HMAC + AES-GCM, Bot API v1.
+- [x] @BotFather FSM: создание/токен/отзыв/удаление/настройки.
+- [x] `/start`-gate, блокировка, 403 до `/start`.
+- [x] Файлы/getFile, webhook/SSRF/HMAC, боты в комнатах, privacy mode.
+- [x] Клиентские бот-чаты, BotFather UI, inline-кнопки, inbox.
+- [x] Общий OkHttpClient и стабильный state hash.
+- [ ] Web App/initData, inline-режим, полный набор админ-методов.
+- [ ] PostgreSQL/Redis/WebSocket, WebRTC-звонки, мультиустройство.
+
+---
+
 ## Release 1.3.0 (группы и каналы)
 
 - [x] Relay 1.1.0: комнаты, участники, владелец, join/leave.

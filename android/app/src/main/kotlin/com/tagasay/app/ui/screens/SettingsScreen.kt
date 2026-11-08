@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Refresh
@@ -104,6 +105,7 @@ fun SettingsScreen(
     onOpenChatSettings: () -> Unit = {},
     onOpenFolders: () -> Unit = {},
     onOpenStickers: () -> Unit = {},
+    onOpenBots: () -> Unit = {},
 ) {
     var editingProfile by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
@@ -333,6 +335,13 @@ fun SettingsScreen(
                 title = "Стикеры",
                 subtitle = "Наборы, избранное, установка",
                 onClick = onOpenStickers,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingsLinkRow(
+                icon = Icons.Filled.SmartToy,
+                title = "Боты",
+                subtitle = "Каталог, мои боты и @BotFather",
+                onClick = onOpenBots,
             )
         }
 

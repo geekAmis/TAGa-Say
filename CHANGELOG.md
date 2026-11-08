@@ -3,6 +3,64 @@
 Все заметные изменения проекта. Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — [Semantic Versioning](https://semver.org/lang/ru/).
 
+## [1.4.0] — 2026-11-08
+
+Клиентская часть платформы ботов (BotFather и Bot API).
+
+### Добавлено
+- `ChatType.BOT`, модели `BotInfo`, `BotMessage`, `BotUpdate`, entities и
+  inline-клавиатуры с контрактными unit-тестами.
+- `TagaApi`: каталог/карточка/«мои боты», `send`, long-poll `inbox`,
+  callback, block/unblock, token/revoke/update/delete. Общий `OkHttpClient`
+  вынесен в `RelayHttp` (один пул соединений на приложение).
+- `BotSync`: оптимистичная отправка с `client_msg_id`, приём inbox,
+  дедупликация по `message_id`, курсор `since`, tombstone-сообщения.
+- Бот-чат в UI: бейдж «бот» в списке, шапка «бот · не E2EE», одноразовое
+  предупреждение, текст с entities, inline-кнопки (callback/url), блокировка.
+- Экран «Боты» (Настройки → Боты и поиск): BotFather, мои боты, каталог.
+- `@BotFather` работает как обычный бот-чат; доступные команды — из карточки,
+  нереализованные сервером команды помечены «скоро» и отключены.
+
+### Изменено
+- `versionCode 9`, версия `1.4.0`.
+
+[1.4.0]: https://github.com/geekAmis/TAGa-Say/releases/tag/v1.4.0
+
+## [1.4.0] — 2026-11-08
+
+Платформа ботов и @BotFather.
+
+### Сервер
+- Relay 1.2.0: `BotStore`, `BotAuth`, `BotService`, `BotRoutes` (`/bot/v1`),
+  `BotUserRoutes` (`/v1/bots`), `BotFather` FSM, `BotUpdates`, `BotFiles`,
+  `BotWebhook`, боты в комнатах.
+- Токены `taga_bot_<id>.<secret>`: HMAC для проверки, AES-GCM для показа,
+  отдельные ключи HKDF, fail-fast без `TAGASAY_BOT_TOKEN_KEY`.
+- BotFather: `/start`, `/newbot`, `/mybots`, `/token`, `/revoke`, `/deletebot`,
+  `/setname`, `/setabouttext`, `/setdescription`, `/setcommands`,
+  `/setprivacy`, `/setjoingroups`, `/setinline`, `/cancel`.
+- Bot API: `getMe`, `getUpdates`, `sendMessage`, `editMessageText`,
+  `deleteMessage`, команды, `answerCallbackQuery`; файлы/getFile,
+  webhook/SSRF/HMAC/ретраи, `my_chat_member`, `channel_post`, privacy mode.
+- Правило «бот не пишет первым до `/start`», `/stop` и блокировка.
+- 44 серверных теста.
+
+### Клиент
+- `ChatType.BOT`, бот-чаты, бейдж «бот · не E2EE», предупреждение.
+- BotFather из «Настройки → Боты» и поиска; каталог/мои боты.
+- Рендер entities, inline-кнопки, callback, optimistic send, inbox long-poll,
+  дедуп, правки/удаления, блокировка.
+- Общий `OkHttpClient` (`RelayHttp`), клиентские тесты `BotModelsTest` 9.
+- `versionCode 9`, версия `1.4.0`; сервер `1.2.0`.
+
+### Ограничения
+- Web App/initData, inline-режим, `sendChatAction`, часть админ-методов — `[~]`.
+- JSON/JSONL BotStore — один инстанс; PostgreSQL/Redis/S3 — следующий этап.
+- Plaintext бот-чатов — осознанный компромисс, отражён в ADR и UI.
+- Звонки WebRTC и мультиустройство — не входят в 1.4.0.
+
+[1.4.0]: https://github.com/geekAmis/TAGa-Say/releases/tag/v1.4.0
+
 ## [1.3.0] — 2026-11-08
 
 Группы и каналы с серверной доставкой.

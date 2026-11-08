@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -77,6 +78,7 @@ fun SearchScreen(
     onOpenChat: (String) -> Unit,
     onOpenContact: (Contact) -> Unit,
     onOpenChannel: (Channel) -> Unit,
+    onOpenBots: () -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -234,6 +236,38 @@ fun SearchScreen(
                         }
                     }
                 }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenBots() }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.SmartToy,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Боты",
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "Каталог, мои боты и @BotFather",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
         } else {
             when (tab) {
@@ -342,12 +376,27 @@ private fun ChatResult(chat: Chat, onClick: () -> Unit) {
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                chat.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    chat.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (chat.type == ChatType.BOT) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "бот",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                }
+            }
             Text(
                 chat.lastMessage,
                 style = MaterialTheme.typography.bodySmall,
@@ -423,5 +472,6 @@ private fun chatSubtitle(chat: Chat): String = when (chat.type) {
     ChatType.CHANNEL -> "канал"
     ChatType.GROUP -> "группа"
     ChatType.SAVED -> "избранное"
+    ChatType.BOT -> "бот"
     else -> "@${chat.username}"
 }

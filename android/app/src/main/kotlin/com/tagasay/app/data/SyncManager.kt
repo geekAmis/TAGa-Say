@@ -8,6 +8,7 @@ import com.tagasay.app.data.model.AppSettings
 import com.tagasay.app.data.network.AccountManager
 import com.tagasay.app.data.network.ApiException
 import com.tagasay.app.data.network.ChatSync
+import com.tagasay.app.data.network.BotSync
 import com.tagasay.app.data.network.CryptoMessenger
 import com.tagasay.app.data.network.MediaTransfer
 import com.tagasay.app.data.network.StateSync
@@ -21,6 +22,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -49,6 +51,14 @@ class SyncManager(
     var chatSync: ChatSync? = null
         private set
 
+    @Volatile
+    var botSync: BotSync? = null
+        private set
+
+    /** Уведомления бот-чатов (ответы на callback, ошибки блокировки). */
+    private val _botNotices = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 32)
+    val botNotices: kotlinx.coroutines.flow.SharedFlow<String> = _botNotices.asSharedFlow()
+
     fun start() {
         if (job?.isActive == true) return
         job = scope.launch {
@@ -62,6 +72,7 @@ class SyncManager(
         job?.cancel()
         job = null
         chatSync = null
+        botSync = null
     }
 
     /** Ждёт, пока после онбординга/смены сети поднимется сессия. */
@@ -74,8 +85,18 @@ class SyncManager(
         return chatSync
     }
 
+    suspend fun awaitBotSync(timeoutMs: Long = 5_000): BotSync? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            botSync?.let { return it }
+            delay(200)
+        }
+        return botSync
+    }
+
     private suspend fun runLoop(settings: AppSettings) {
         chatSync = null
+        botSync = null
         if (!settings.onboarded || settings.serverUrl.isBlank() || settings.username.isBlank()) return
 
         var backoff = 2L
@@ -92,6 +113,8 @@ class SyncManager(
                 val media = MediaTransfer(appContext, crypto, api)
                 val sync = ChatSync(api, messenger, repository, media, settings.username, crypto)
                 chatSync = sync
+                val bots = BotSync(appContext, api, repository, settings.username, _botNotices)
+                botSync = bots
                 backoff = 2
                 stateSync.pullAndApply(api, session)
                 runCatching { api.rooms().forEach { repository.applyRoom(it) } }
@@ -99,6 +122,10 @@ class SyncManager(
                 var ticks = 0
                 while (currentCoroutineContext().isActive) {
                     sync.poll()
+                    if (ticks % BOT_POLL_EVERY_POLLS == 0) {
+                        runCatching { bots.poll() }
+                            .onFailure { Log.w("TAGaBots", "inbox poll failed: ${it.message}") }
+                    }
                     if (ticks % STATE_PUSH_EVERY_POLLS == 0) {
                         stateSync.pushIfChanged(api, session)
                     }
@@ -117,6 +144,7 @@ class SyncManager(
                     accountManager.clear()
                 }
                 chatSync = null
+                botSync = null
                 delay(backoff * 1_000)
                 backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF_SECONDS)
             }
@@ -127,6 +155,8 @@ class SyncManager(
         const val POLL_INTERVAL_MS = 3_000L
         const val STATE_PUSH_EVERY_POLLS = 5
         const val ROOM_REFRESH_EVERY_POLLS = 10
+        /** 20 запросов/мин на пользователя — берём с запасом (10/мин). */
+        const val BOT_POLL_EVERY_POLLS = 2
         const val MAX_BACKOFF_SECONDS = 30L
     }
 }

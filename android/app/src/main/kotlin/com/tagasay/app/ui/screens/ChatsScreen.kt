@@ -415,17 +415,32 @@ private fun ChatRow(chat: Chat, folders: List<ChatFolder>, onClick: () -> Unit) 
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (chat.type == ChatType.CHANNEL) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "канал",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 5.dp, vertical = 1.dp),
-                    )
+                when (chat.type) {
+                    ChatType.CHANNEL -> {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "канал",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
+                    ChatType.BOT -> {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "бот",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                        )
+                    }
+                    else -> Unit
                 }
                 if (folderTag != null) {
                     Spacer(Modifier.width(4.dp))
